@@ -1,13 +1,13 @@
 # Data is never committed (license terms: Yahoo is personal/research use, FNSPID is large)
-data/
-artifacts/
-mlruns/
-mlflow.db
-logs/
+/data/
+/artifacts/
+/mlruns/
+/mlflow.db
+/logs/
 .venv/
 __pycache__/
 *.pyc
 .ipynb_checkpoints/
 .DS_Store
-wandb/
+/wandb/
 .pytest_cache/
