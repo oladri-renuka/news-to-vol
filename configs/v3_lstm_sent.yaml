@@ -1,0 +1,3 @@
+inherit: _lstm.yaml
+name: v3_lstm_sent
+experiment: {id: V3, kind: deep, feature_groups: [price, sentiment]}

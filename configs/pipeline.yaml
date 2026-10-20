@@ -1,0 +1,12 @@
+inherit: sentiment.yaml
+name: pipeline
+pipeline:
+  store: artifacts/store/forecasts.sqlite
+  history_years: 4            # downloads enough for HAR refits and a 60-day window
+  har_fit_years: 3
+  realized_backfill_days: 120
+  # Price-only model trained on the last walk-forward fold (train through 2021, val 2022).
+  # Live headlines after 2023 are not available from FNSPID.
+  deep_checkpoint: artifacts/models/v2_lstm_price/lstm_seed0_test2023.pt
+  deep_label: LSTM-price
+  live_headlines_csv: data/live/headlines.csv

@@ -1,0 +1,8 @@
+inherit: base.yaml
+model:
+  type: lstm
+  window: 60
+  hidden: 64
+  layers: 2
+  emb_dim: 8
+  dropout: 0.2

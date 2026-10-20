@@ -1,0 +1,15 @@
+{
+  "model": "lstm",
+  "checkpoint": "lstm_seed0_test2023.pt",
+  "device": "cpu",
+  "torch_threads": 1,
+  "params": 56881,
+  "size_mb_fp32_weights": 0.217,
+  "checkpoint_file_mb": 0.222,
+  "request_p50_ms": 10.823,
+  "request_p95_ms": 15.304,
+  "inference_p50_ms": 4.079,
+  "inference_p95_ms": 4.901,
+  "n_requests": 500,
+  "mode": "in-process TestClient"
+}

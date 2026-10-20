@@ -1,0 +1,4 @@
+inherit: _lstm.yaml
+name: v6_lstm_win20
+experiment: {id: V6, kind: deep, feature_groups: [price, sentiment]}
+model: {window: 20}

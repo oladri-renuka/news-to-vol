@@ -1,0 +1,15 @@
+inherit: eval.yaml
+name: eval_ablation
+paths:
+  reports: reports/ablation
+eval:
+  models:
+    HAR: v1_baselines/har.parquet
+    LSTM-sent: v3_lstm_sent/lstm.parquet
+    LSTM-noVIX: v6_lstm_no_vix/lstm.parquet
+    LSTM-noRange: v6_lstm_no_range/lstm.parquet
+    LSTM-win20: v6_lstm_win20/lstm.parquet
+    Transformer-sent: v3_transformer_sent/transformer.parquet
+    Transformer-noVIX: v6_transformer_no_vix/transformer.parquet
+    Transformer-noRange: v6_transformer_no_range/transformer.parquet
+    Transformer-win20: v6_transformer_win20/transformer.parquet

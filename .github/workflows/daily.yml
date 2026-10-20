@@ -1,0 +1,20 @@
+# Weekdays at 22:30 UTC (after the US close). The workflow needs the trained checkpoint and the panel
+# metadata. Publish them as a release asset or cache them; artifacts/ is not committed.
+name: daily-forecast
+on:
+  schedule: [{cron: "30 22 * * 1-5"}]
+  workflow_dispatch:
+jobs:
+  forecast:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with: {python-version: "3.11"}
+      - run: pip install --index-url https://download.pytorch.org/whl/cpu torch && pip install -r requirements.txt
+      - name: Fetch model artifacts
+        run: gh release download model-latest --pattern 'artifacts.tar.gz' && tar xzf artifacts.tar.gz
+        env: {GH_TOKEN: "${{ github.token }}"}
+      - run: python -m src.pipeline.daily --config configs/pipeline.yaml
+      - uses: actions/upload-artifact@v4
+        with: {name: forecasts, path: artifacts/store/forecasts.sqlite}

@@ -1,0 +1,67 @@
+# Ticker selection rule (fixed before any modelling):
+#   1. Start from S&P 500 members on 2010-01-01, ranked by market cap on 2009-12-31.
+#   2. Walk down the ranking and keep a ticker if (a) yfinance has adjusted daily OHLCV
+#      for it continuously from 2010-01-04 through 2023-12-29 under the same symbol, and
+#      (b) FNSPID has at least `min_headlines_per_year` headlines for it in every
+#      study year (see configs/base.yaml: news.min_headlines_per_year).
+#   3. Stop at `n_tickers`.
+#
+# The ranking below is approximate. It was compiled from public end-2009 market-cap
+# tables, so verify it against CRSP/Compustat if you have access. The selection is
+# survivorship-biased by construction because step 2(a) requires the firm to survive
+# to 2023 (see README > Limitations).
+#
+# Excluded on purpose:
+#   BRK-B  joined the S&P 500 in Feb 2010, so it was not a member on 2010-01-01.
+#   UTX    became RTX in 2020, so the symbol does not trade continuously.
+n_tickers: 30
+ranked_candidates:
+  - XOM
+  - MSFT
+  - WMT
+  - GOOG
+  - AAPL
+  - JNJ
+  - PG
+  - IBM
+  - T
+  - JPM
+  - GE
+  - CVX
+  - PFE
+  - WFC
+  - CSCO
+  - KO
+  - BAC
+  - ORCL
+  - HPQ
+  - MRK
+  - INTC
+  - PEP
+  - VZ
+  - PM
+  - GS
+  - ABT
+  - SLB
+  - QCOM
+  - COP
+  - C
+  - MCD
+  - OXY
+  - DIS
+  - AMZN
+  - UPS
+  - AMGN
+  - MMM
+  - HD
+  - BMY
+  - CMCSA
+  - MO
+  - USB
+  - UNH
+# FNSPID symbols that should be merged into a universe ticker.
+news_aliases:
+  GOOG: [GOOG, GOOGL]
+market_tickers:
+  index: "^GSPC"
+  vix: "^VIX"

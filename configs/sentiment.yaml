@@ -1,0 +1,22 @@
+inherit: base.yaml
+name: sentiment
+
+sentiment:
+  phrasebank_zip: data/raw/phrasebank/FinancialPhraseBank-v1.0.zip
+  phrasebank_configs: [sentences_allagree, sentences_75agree]
+  final_train_configs: [sentences_75agree]   # a superset of allagree
+  model_name: distilroberta-base
+  finbert_name: ProsusAI/finbert
+  cv_folds: 10
+  max_folds: null          # set to e.g. 1 for a quick smoke run
+  epochs: 4
+  batch_size: 32
+  lr: 3.0e-5
+  weight_decay: 0.01
+  warmup_ratio: 0.1
+  max_length: 64
+  device: auto
+  model_dir: artifacts/sentiment/distilroberta-fpb
+  score_with: finetuned    # finetuned | finbert
+  score_batch_size: 512
+  score_chunk: 50000

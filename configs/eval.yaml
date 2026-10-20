@@ -1,0 +1,17 @@
+inherit: base.yaml
+name: eval
+eval:
+  benchmark: HAR
+  # More DM benchmarks. HAR-X asks: does the deep model beat a linear model on the same inputs?
+  extra_benchmarks: [HAR-X, HAR+sent]
+  # label -> predictions file under artifacts/predictions/. Missing files are skipped with a warning.
+  models:
+    EWMA: v1_baselines/ewma.parquet
+    GARCH: v1_baselines/garch.parquet
+    HAR: v1_baselines/har.parquet
+    HAR-X: v1_baselines/har_x.parquet
+    HAR+sent: v4_har_sent/har_sent.parquet
+    LSTM-price: v2_lstm_price/lstm.parquet
+    Transformer-price: v2_transformer_price/transformer.parquet
+    LSTM-sent: v3_lstm_sent/lstm.parquet
+    Transformer-sent: v3_transformer_sent/transformer.parquet

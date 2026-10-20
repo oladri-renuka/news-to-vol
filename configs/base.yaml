@@ -1,0 +1,109 @@
+# Shared defaults. Every experiment config inherits from this file.
+name: base
+seed: 0
+seeds: [0, 1, 2]
+
+paths:
+  raw: data/raw
+  interim: data/interim
+  processed: data/processed
+  artifacts: artifacts
+  reports: reports
+
+universe_config: configs/universe.yaml
+
+study:
+  start: "2010-01-01"
+  end: "2023-12-31"
+  # Prices are downloaded from here so 2010 has a full feature warm-up
+  # (monthly RV, 60-day volume z-score, 60-day sequence window).
+  download_start: "2009-01-01"
+
+target:
+  horizon: 5            # RV(t, t+5) = sqrt(sum_{i=1..5} r_{t+i}^2)
+  variance_floor: 1.0e-8
+
+news:
+  # FNSPID ships two files. Both are read and de-duplicated on (ticker, timestamp, headline).
+  fnspid_csvs:
+    - data/raw/fnspid/nasdaq_exteral_data.csv
+    - data/raw/fnspid/All_external.csv
+  # FNSPID labels its timestamps "UTC". Run `python -m src.data.news --audit` to check
+  # that label against intraday-specific headlines ("Pre-Market", "After-Hours", ...).
+  # The value here sets the timezone the raw clock times are parsed in.
+  timestamp_tz: UTC
+  market_tz: America/New_York
+  cutoff: "16:00"         # headlines at or after this ET time count for the next trading day
+  # Rows stamped exactly 00:00:00 carry a date but no real time. Under "next_day"
+  # they are assumed to be after the close and shifted forward, which is the conservative choice.
+  date_only_policy: next_day
+  min_headlines_per_year: 20
+  min_covered_year_fraction: 1.0   # share of study years that must reach the minimum
+  decay: 0.5              # s_t = x_t + decay * s_{t-1}
+
+features:
+  price:
+    - log_rv_d
+    - log_rv_w
+    - log_rv_m
+    - log_parkinson
+    - log_gk
+    - log_parkinson_w
+    - log_gk_w
+    - abs_ret
+    - ret
+    - volume_z
+    - log_vix
+    - dlog_vix
+    - dow_0
+    - dow_1
+    - dow_2
+    - dow_3
+    - dow_4
+  sentiment:
+    - sent_mean
+    - log_news_count
+    - max_neg
+    - has_news
+    - mkt_sent_mean
+    - mkt_log_news_count
+  har: [log_rv_d, log_rv_w, log_rv_m]
+
+walk_forward:
+  train_start_year: 2010
+  first_test_year: 2017
+  last_test_year: 2023
+  # Drop the last `horizon` rows of each fit window, because their targets
+  # overlap the next window.
+  purge: true
+  # Baselines have no hyperparameters, so they are fit on train+val. That gives
+  # them one extra recent year and makes them stronger, which is the honest direction.
+  baseline_fit_on: train_val
+
+regimes:
+  calm:     {vix_lt: 20}
+  mid:      {vix_ge: 20, vix_lt: 30}
+  stressed: {vix_ge: 30}
+  covid_crash: {start: "2020-02-20", end: "2020-04-30"}
+  y2022:    {start: "2022-01-01", end: "2022-12-31"}
+
+tracking:
+  backend: mlflow        # mlflow | wandb | none  (mlflow logs to ./mlflow.db; view with `mlflow ui --backend-store-uri sqlite:///mlflow.db`)
+  experiment: volsent
+
+baselines:
+  ewma_lambda: 0.94
+  garch_dist: t
+  har_pooled: false      # per-ticker OLS (the classic HAR)
+  har_ridge: 0.0
+
+# Shared deep-model defaults (the spec's training setup).
+train:
+  lr: 1.0e-3
+  batch_size: 256
+  max_epochs: 50
+  patience: 5
+  min_delta: 0.0
+  grad_clip: 1.0
+  weight_decay: 0.0
+  device: auto

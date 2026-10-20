@@ -1,0 +1,3 @@
+inherit: _transformer.yaml
+name: v6_transformer_no_range
+experiment: {id: V6, kind: deep, feature_groups: [price, sentiment], drop_features: [log_parkinson, log_gk, log_parkinson_w, log_gk_w]}

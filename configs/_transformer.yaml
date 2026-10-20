@@ -1,0 +1,10 @@
+inherit: base.yaml
+model:
+  type: transformer
+  window: 60
+  d_model: 64
+  nhead: 4
+  layers: 3
+  ff: 128
+  emb_dim: 8
+  dropout: 0.2

@@ -1,0 +1,3 @@
+inherit: _lstm.yaml
+name: v2_lstm_price
+experiment: {id: V2, kind: deep, feature_groups: [price]}

@@ -1,0 +1,6 @@
+inherit: base.yaml
+name: v1_baselines
+experiment:
+  id: V1
+  kind: baselines
+  models: [ewma, garch, har, har_x]   # har_x = HAR on all price features (not in the spec; added to attribute gains)
