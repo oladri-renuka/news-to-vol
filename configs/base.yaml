@@ -103,6 +103,8 @@ baselines:
   garch_dist: t
   har_pooled: false      # per-ticker OLS (the classic HAR)
   har_ridge: 0.0
+  # HAR+sentiment: a ticker with fewer covered fit rows than this uses the pooled regression.
+  har_min_fit_rows: 250
 
 # Shared deep-model defaults (the spec's training setup).
 train:

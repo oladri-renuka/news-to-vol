@@ -74,8 +74,13 @@ def run_baselines(cfg: dict, panel: pd.DataFrame, folds, tracker: Tracker) -> di
                     cols += [c for c in cfg["features"]["sentiment"] if c != "news_covered"
                              and c not in set(cfg["experiment"].get("drop_features", []))]
                 hcfg = cfg["baselines"]
-                fitted = B.fit_har(panel, fit_dates, cols, hcfg.get("har_pooled", False), hcfg.get("har_ridge", 0.0))
+                fitted = B.fit_har(panel, fit_dates, cols, hcfg.get("har_pooled", False), hcfg.get("har_ridge", 0.0),
+                                   min_rows=hcfg.get("har_min_fit_rows", 250) if m == "har_sent" else 0)
                 p = B.predict_har(panel, fitted, test, cols)
+                fb = p.loc[p.pooled_fallback, "ticker"].unique()
+                if len(fb):
+                    log.info("[%d] %s: pooled fallback for %s (too few covered fit rows)", fold.test_year, m,
+                             " ".join(sorted(fb)))
                 ct = B.har_coef_table(fitted, cols)
                 ct["model"], ct["test_year"] = m, fold.test_year
                 coefs.append(ct)

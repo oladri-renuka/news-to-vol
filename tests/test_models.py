@@ -86,3 +86,18 @@ def test_har_handles_constant_sentiment_column():
     df["y"] = 0.5 * df.a + rng.normal(0, 0.1, 500)
     beta, _ = fit_har(df, dates, ["a", "sent"])["T"]
     assert beta[2] == 0.0 and abs(beta[1] - 0.5) < 0.05
+
+
+def test_har_pooled_fallback_for_ticker_without_fit_rows():
+    """Ticker covered in the test year but not in the fit window (e.g. MSFT for HAR+sentiment)."""
+    rng = np.random.default_rng(2)
+    dates = pd.bdate_range("2015-01-01", periods=600)
+    idx = pd.MultiIndex.from_product([dates, ["A", "B"]], names=["date", "ticker"])
+    df = pd.DataFrame({"a": rng.normal(size=len(idx))}, index=idx)
+    df["y"] = 0.5 * df.a + rng.normal(0, 0.1, len(idx))
+    df.loc[(df.index.get_level_values("ticker") == "B") & (df.index.get_level_values("date") < dates[500]), "a"] = np.nan
+    m = fit_har(df, dates[:500], ["a"], min_rows=250)
+    assert "A" in m and "B" not in m and "__all__" in m
+    p = predict_har(df, m, dates[500:], ["a"])
+    assert set(p.ticker) == {"A", "B"}
+    assert p[p.ticker == "B"].pooled_fallback.all() and not p[p.ticker == "A"].pooled_fallback.any()

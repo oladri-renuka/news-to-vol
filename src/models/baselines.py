@@ -97,27 +97,45 @@ def _ols(X: np.ndarray, y: np.ndarray, ridge: float = 0.0) -> np.ndarray:
 
 
 def fit_har(panel: pd.DataFrame, fit_dates: pd.DatetimeIndex, cols: list[str], pooled: bool = False,
-            ridge: float = 0.0) -> dict:
-    """Return {ticker: (coef, smear)}. Pooled models share a single coef under the key '__all__'."""
+            ridge: float = 0.0, min_rows: int = 0) -> dict:
+    """Return {ticker: (coef, smear)}, plus a pooled model under '__all__'.
+
+    Tickers with fewer than `min_rows` usable fit rows get no model of their own and use the
+    pooled one at prediction time. This happens with HAR+sentiment for a ticker whose news
+    coverage starts after the fit window, e.g. MSFT, covered only from 2022.
+    """
     fit = panel[panel.index.get_level_values("date").isin(fit_dates)].dropna(subset=cols + ["y"])
     models = {}
-    groups = [("__all__", fit)] if pooled else list(fit.groupby(level="ticker"))
-    for t, g in groups:
+
+    def _fit(g):
         X, y = g[cols].to_numpy(float), g["y"].to_numpy(float)
         beta = _ols(X, y, ridge)
-        yhat = beta[0] + X @ beta[1:]
-        models[t] = (beta, smearing_factor(y, yhat))
+        return beta, smearing_factor(y, beta[0] + X @ beta[1:])
+
+    if len(fit):
+        models["__all__"] = _fit(fit)
+    if not pooled:
+        for t, g in fit.groupby(level="ticker"):
+            if len(g) >= max(min_rows, len(cols) + 2):
+                models[t] = _fit(g)
     return models
 
 
 def predict_har(panel: pd.DataFrame, models: dict, test_dates: pd.DatetimeIndex, cols: list[str]) -> pd.DataFrame:
+    """The `pooled_fallback` column is True where a ticker had no model of its own."""
     te = panel[panel.index.get_level_values("date").isin(test_dates)].dropna(subset=cols)
     rows = []
     for t, g in te.groupby(level="ticker"):
-        beta, smear = models.get(t, models.get("__all__"))
+        own = t in models
+        if not own and "__all__" not in models:
+            continue
+        beta, smear = models[t] if own else models["__all__"]
         yhat = beta[0] + g[cols].to_numpy(float) @ beta[1:]
         rows.append(pd.DataFrame({"date": g.index.get_level_values("date"), "ticker": t,
-                                  "y_pred": yhat, "var_pred": np.exp(2 * yhat) * smear}))
+                                  "y_pred": yhat, "var_pred": np.exp(2 * yhat) * smear,
+                                  "pooled_fallback": not own}))
+    if not rows:
+        return pd.DataFrame(columns=["date", "ticker", "y_pred", "var_pred", "pooled_fallback"])
     return pd.concat(rows, ignore_index=True)
 
 
