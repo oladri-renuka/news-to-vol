@@ -190,11 +190,13 @@ Vol-targeting check (`reports/*/tables/vol_target.csv`, transaction costs ignore
 * **API** (`serve/api.py`, `serve/Dockerfile`): `GET /forecast/{ticker}` and `POST /predict` (raw 60×17 feature window → 5-day vol). `.github/workflows/docker.yml` builds the image on every change to the serving code, starts the container, checks `/health`, checks that a malformed request gets a 422, and benchmarks latency inside the container.
 * **Latency** (`python -m serve.benchmark`, CPU, 1 thread, 500 requests):
 
-| Model | Params | Size | Machine | Inference p50 / p95 | Request p50 / p95 (HTTP via TestClient) |
+| Model | Params | Size | Machine | Inference p50 / p95 | Request p50 / p95 (TestClient unless noted) |
 |---|---|---|---|---|---|
+| LSTM | 56,881 | 0.22 MB | Docker container on a GitHub Actions runner, real HTTP via uvicorn | 0.69 / 0.70 ms | 2.9 / 3.0 ms |
 | LSTM | 56,881 | 0.22 MB | RunPod x86 CPU | 0.97 / 1.89 ms | 8.5 / 12.0 ms |
 | LSTM | 56,881 | 0.22 MB | Apple M4 | 4.1 / 4.9 ms | 10.8 / 15.3 ms |
 
+  The serving image is 1.0 GB, almost all of it CPU PyTorch; the model itself is 0.22 MB.
 * **Dashboard** (`dashboard/app.py`): forecast vs realized per ticker, rolling QLIKE vs HAR, per-year error table, the latest live forecasts, and the day's most negative headlines.
 
 ## Limitations
