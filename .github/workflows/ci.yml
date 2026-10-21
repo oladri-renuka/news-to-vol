@@ -1,5 +1,8 @@
 name: ci
-on: [push, pull_request]
+on:
+  push:
+    branches: ['**']   # not on release tags
+  pull_request:
 jobs:
   test:
     runs-on: ubuntu-latest
