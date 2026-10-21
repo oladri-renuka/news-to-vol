@@ -14,3 +14,4 @@ __pycache__/
 /_mac_run_backup/
 /results/
 /results.tar.gz
+/model.tar.gz

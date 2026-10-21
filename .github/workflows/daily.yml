@@ -1,20 +1,38 @@
-# Weekdays at 22:30 UTC (after the US close). The workflow needs the trained checkpoint and the panel
-# metadata. Publish them as a release asset or cache them; artifacts/ is not committed.
+# Daily batch forecast, weekdays at 22:30 UTC (after the US close and the pipeline's 16:30 ET
+# settle time). Downloads the trained price-only LSTM from the `model-latest` release, pulls fresh
+# prices from yfinance, forecasts next-week vol for the 30 tickers (EWMA, HAR, LSTM), and appends to
+# the SQLite store kept as an asset of the `forecasts` release. The history accumulates across runs.
 name: daily-forecast
 on:
   schedule: [{cron: "30 22 * * 1-5"}]
   workflow_dispatch:
+permissions:
+  contents: write
+concurrency: {group: daily-forecast, cancel-in-progress: false}
 jobs:
   forecast:
     runs-on: ubuntu-latest
+    timeout-minutes: 20
+    env:
+      GH_TOKEN: ${{ github.token }}
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-python@v5
-        with: {python-version: "3.11"}
-      - run: pip install --index-url https://download.pytorch.org/whl/cpu torch && pip install -r requirements.txt
-      - name: Fetch model artifacts
-        run: gh release download model-latest --pattern 'artifacts.tar.gz' && tar xzf artifacts.tar.gz
-        env: {GH_TOKEN: "${{ github.token }}"}
-      - run: python -m src.pipeline.daily --config configs/pipeline.yaml
+        with: {python-version: "3.11", cache: pip, cache-dependency-path: requirements-pipeline.txt}
+      - name: Install (CPU torch + pipeline deps only)
+        run: |
+          pip install --index-url https://download.pytorch.org/whl/cpu torch==2.5.1
+          pip install -r requirements-pipeline.txt
+      - name: Fetch the trained model
+        run: gh release download model-latest --pattern model.tar.gz && tar xzf model.tar.gz
+      - name: Fetch the forecast history
+        run: |
+          mkdir -p artifacts/store
+          gh release download forecasts --pattern forecasts.sqlite --dir artifacts/store \
+            || echo "no previous store; starting a new one"
+      - name: Run the pipeline
+        run: python -m src.pipeline.daily --config configs/pipeline.yaml
+      - name: Publish the updated store
+        run: gh release upload forecasts artifacts/store/forecasts.sqlite --clobber
       - uses: actions/upload-artifact@v4
-        with: {name: forecasts, path: artifacts/store/forecasts.sqlite}
+        with: {name: forecasts, path: artifacts/store/forecasts.sqlite, retention-days: 30}

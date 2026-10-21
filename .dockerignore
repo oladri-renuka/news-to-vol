@@ -1,0 +1,9 @@
+# Send only what serve/Dockerfile copies.
+*
+!serve
+!src/__init__.py
+!src/config.py
+!src/models/__init__.py
+!src/models/deep.py
+!artifacts/models/v2_lstm_price/lstm_seed0_test2023.pt
+serve/__pycache__

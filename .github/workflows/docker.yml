@@ -1,0 +1,39 @@
+# Build the serving image, start it, check /health and /predict, and measure CPU latency inside
+# the container. The checkpoint comes from the `model-latest` release.
+name: docker
+on:
+  push:
+    paths: [serve/**, src/models/deep.py, src/config.py, .dockerignore, .github/workflows/docker.yml]
+  workflow_dispatch:
+jobs:
+  build-and-test:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    env:
+      GH_TOKEN: ${{ github.token }}
+    steps:
+      - uses: actions/checkout@v4
+      - name: Fetch the trained model
+        run: gh release download model-latest --pattern model.tar.gz && tar xzf model.tar.gz
+      - name: Build
+        run: docker build -f serve/Dockerfile -t volsent-api .
+      - name: Image size
+        run: docker image ls volsent-api --format '{{.Repository}} {{.Size}}'
+      - name: Start the container
+        run: |
+          docker run -d --name api -p 8000:8000 volsent-api
+          for i in $(seq 1 30); do curl -fs localhost:8000/health && break; sleep 1; done
+          curl -fs localhost:8000/health | python -m json.tool
+      - name: Check that a bad request is rejected
+        run: |
+          code=$(curl -s -o /dev/null -w '%{http_code}' -X POST localhost:8000/predict \
+                 -H 'content-type: application/json' -d '{"ticker":"AAPL","window":[[0]]}')
+          echo "status $code"; test "$code" = "422"
+      - name: Latency benchmark inside the container (CPU, 1 thread)
+        run: |
+          docker exec api python -m serve.benchmark --url http://localhost:8000 --n 500
+          docker cp api:/app/reports/tables/latency_lstm.json latency_docker.json
+      - uses: actions/upload-artifact@v4
+        with: {name: latency-docker, path: latency_docker.json}
+      - if: always()
+        run: docker logs api | tail -20

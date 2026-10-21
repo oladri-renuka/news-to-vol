@@ -1,0 +1,9 @@
+# Minimal dependencies for the daily batch pipeline (src/pipeline/daily.py), used by
+# .github/workflows/daily.yml. Install a CPU build of torch first:
+#   pip install --index-url https://download.pytorch.org/whl/cpu torch==2.5.1
+numpy>=1.26
+pandas>=2.1
+pyarrow>=14
+scipy>=1.11
+pyyaml>=6
+yfinance>=0.2.40
