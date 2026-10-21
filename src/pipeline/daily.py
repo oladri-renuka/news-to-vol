@@ -112,7 +112,8 @@ def run(cfg: dict, asof: str | None, offline: bool) -> pd.DataFrame:
         calendar = calendar[calendar <= pd.Timestamp(asof)]
     asof_ts = calendar.max()
     panel = build_price_panel({t: p.loc[:asof_ts] for t, p in prices.items()}, vix.loc[:asof_ts], calendar,
-                              cfg["target"]["horizon"], cfg["target"]["variance_floor"])
+                              cfg["target"]["horizon"], cfg["target"]["variance_floor"],
+                              cfg["features"].get("vix_lag", 1))
     h = cfg["target"]["horizon"]
     log.info("forecast origin %s, %d tickers", asof_ts.date(), len(tickers))
 

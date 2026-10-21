@@ -52,3 +52,26 @@ def test_parkinson_constant():
     # ln(H/L) = 0.02  ->  0.02^2 / (4 ln 2)
     v = parkinson_var(pd.Series([np.exp(0.02)]), pd.Series([1.0]))
     assert np.isclose(v.iloc[0], 0.0004 / (4 * np.log(2)))
+
+
+def test_same_day_vix_is_not_a_feature(ohlcv, vix):
+    """VIX closes at 16:15 ET, after the 16:00 forecast origin. Changing day t's VIX must not change
+    any model input at t. It may only change inputs from t+1 on."""
+    from src.config import load_config
+
+    feats = [c for c in load_config("configs/base.yaml")["features"]["price"]]
+    t = 250
+    base = price_features(ohlcv, vix, vix_lag=1)
+    v2 = vix.copy(); v2.iloc[t] *= 2.0
+    alt = price_features(ohlcv, v2, vix_lag=1)
+    pd.testing.assert_frame_equal(base[feats].iloc[: t + 1], alt[feats].iloc[: t + 1])
+    assert not np.isclose(base.log_vix.iloc[t + 1], alt.log_vix.iloc[t + 1])
+
+
+def test_same_day_vix_leak_is_detectable(ohlcv, vix):
+    """Sanity check for the test above: with vix_lag=0 (the archived run), the leak shows up."""
+    t = 250
+    base = price_features(ohlcv, vix, vix_lag=0)
+    v2 = vix.copy(); v2.iloc[t] *= 2.0
+    alt = price_features(ohlcv, v2, vix_lag=0)
+    assert not np.isclose(base.log_vix.iloc[t], alt.log_vix.iloc[t])

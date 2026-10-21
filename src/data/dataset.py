@@ -79,7 +79,8 @@ def build_panel(cfg: dict, force: bool = False) -> pd.DataFrame:
     vix = load_prices(cfg, u["market_tickers"]["vix"])
     prices = {t: load_prices(cfg, t) for t in tickers}
     tcfg = cfg["target"]
-    panel = build_price_panel(prices, vix, calendar, tcfg["horizon"], tcfg["variance_floor"])
+    panel = build_price_panel(prices, vix, calendar, tcfg["horizon"], tcfg["variance_floor"],
+                              cfg["features"].get("vix_lag", 1))
 
     scored_path = interim / "headlines_scored.parquet"
     if scored_path.exists():
@@ -101,6 +102,7 @@ def build_panel(cfg: dict, force: bool = False) -> pd.DataFrame:
     panel.to_parquet(out)
     with open(out.with_suffix(".json"), "w") as f:
         json.dump({"tickers": tickers, "sentiment_available": sentiment_available,
+                   "vix_lag": cfg["features"].get("vix_lag", 1),
                    "n_rows": len(panel)}, f, indent=2)
     return panel
 

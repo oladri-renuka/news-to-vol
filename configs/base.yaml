@@ -48,6 +48,9 @@ news:
   decay: 0.5              # s_t = x_t + decay * s_{t-1}
 
 features:
+  # VIX closes at 16:15 ET, 15 minutes after the stock close that defines the forecast origin.
+  # The VIX features use the close of t-1. Set to 0 only to reproduce the archived same-day-VIX run.
+  vix_lag: 1
   price:
     - log_rv_d
     - log_rv_w

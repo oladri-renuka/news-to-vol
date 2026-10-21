@@ -32,7 +32,8 @@ def garman_klass_var(o: pd.Series, h: pd.Series, l: pd.Series, c: pd.Series) -> 
     return gk.clip(lower=0.0)
 
 
-def price_features(px: pd.DataFrame, vix: pd.Series, horizon: int = 5, var_floor: float = 1e-8) -> pd.DataFrame:
+def price_features(px: pd.DataFrame, vix: pd.Series, horizon: int = 5, var_floor: float = 1e-8,
+                   vix_lag: int = 1) -> pd.DataFrame:
     """Build features + target for one ticker. `px` has Open/High/Low/Close/Volume."""
     out = pd.DataFrame(index=px.index)
     r = log_returns(px["Close"])
@@ -61,12 +62,15 @@ def price_features(px: pd.DataFrame, vix: pd.Series, horizon: int = 5, var_floor
     sd = lv.rolling(60, min_periods=20).std()
     out["volume_z"] = ((lv - mu) / sd).clip(-6, 6)
 
-    # VIX closes at 16:15 ET and stocks at 16:00. That 15-minute overlap is a small,
-    # documented look-ahead.
+    # VIX closes at 16:15 ET, after the 16:00 stock close that defines the forecast origin.
+    # Model inputs therefore use VIX from t - vix_lag (default 1), so nothing published after
+    # the origin is used. `vix` (unlagged) is kept only to label regimes in the evaluation; it
+    # is never a model input.
     v = vix.reindex(px.index)
+    vl = v.shift(vix_lag) if vix_lag else v
     out["vix"] = v
-    out["log_vix"] = np.log(v)
-    out["dlog_vix"] = np.log(v).diff()
+    out["log_vix"] = np.log(vl)
+    out["dlog_vix"] = np.log(vl).diff()
 
     dow = px.index.dayofweek
     for d in range(5):
@@ -80,13 +84,13 @@ def price_features(px: pd.DataFrame, vix: pd.Series, horizon: int = 5, var_floor
 
 
 def build_price_panel(prices: dict[str, pd.DataFrame], vix: pd.DataFrame, calendar: pd.DatetimeIndex,
-                      horizon: int = 5, var_floor: float = 1e-8) -> pd.DataFrame:
+                      horizon: int = 5, var_floor: float = 1e-8, vix_lag: int = 1) -> pd.DataFrame:
     """Long panel indexed by (date, ticker) on a common trading calendar."""
     frames = []
     vix_close = vix["Close"].reindex(calendar).ffill()
     for t, px in prices.items():
         px = px.reindex(calendar)
-        f = price_features(px, vix_close, horizon, var_floor)
+        f = price_features(px, vix_close, horizon, var_floor, vix_lag)
         f["ticker"] = t
         frames.append(f)
     panel = pd.concat(frames)
