@@ -181,9 +181,13 @@ Vol-targeting check (`reports/*/tables/vol_target.csv`, transaction costs ignore
 
 ## Deployment
 
-* **Daily pipeline** (`src/pipeline/daily.py`, cron or `.github/workflows/daily.yml`): pulls the latest prices from yfinance, refits HAR on a trailing 3-year window, runs EWMA and the price-only LSTM, and writes to SQLite (`artifacts/store/forecasts.sqlite`). A bar for today is dropped until 16:30 ET, so an intraday partial bar is never used.
+* **Daily pipeline** (`src/pipeline/daily.py`): pulls the latest prices from yfinance, refits HAR on a trailing 3-year window, runs EWMA and the price-only LSTM, and appends to SQLite (`forecasts`, `realized` and `headlines` tables). A bar for today is dropped until 16:30 ET, so an intraday partial bar is never used.
+* **Scheduled run** (`.github/workflows/daily.yml`, weekdays at 22:30 UTC):
+  * Downloads the trained LSTM from the [`model-latest`](https://github.com/oladri-renuka/news-to-vol/releases/tag/model-latest) release and installs only `requirements-pipeline.txt` plus CPU torch.
+  * Runs the pipeline, then publishes the updated `forecasts.sqlite` to the [`forecasts`](https://github.com/oladri-renuka/news-to-vol/releases/tag/forecasts) release, so the history accumulates across runs.
+  * To use it locally: `gh release download forecasts -p forecasts.sqlite -D artifacts/store`.
 * **FNSPID ends in 2023.** Live headlines need a separate news source. If `data/live/headlines.csv` exists (`published_at_utc, ticker, headline`), the pipeline aligns and scores it with the same 16:00 ET rule and stores it for the dashboard. The deployed model uses price features only, which is also the better model per the results above.
-* **API** (`serve/api.py`, `serve/Dockerfile`): `GET /forecast/{ticker}` and `POST /predict` (raw 60×17 feature window → 5-day vol).
+* **API** (`serve/api.py`, `serve/Dockerfile`): `GET /forecast/{ticker}` and `POST /predict` (raw 60×17 feature window → 5-day vol). `.github/workflows/docker.yml` builds the image on every change to the serving code, starts the container, checks `/health`, checks that a malformed request gets a 422, and benchmarks latency inside the container.
 * **Latency** (`python -m serve.benchmark`, CPU, 1 thread, 500 requests):
 
 | Model | Params | Size | Machine | Inference p50 / p95 | Request p50 / p95 (HTTP via TestClient) |
