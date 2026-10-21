@@ -1,0 +1,7 @@
+,,acc,acc,macro_f1,macro_f1
+,,mean,std,mean,std
+config,model,,,,
+sentences_75agree,ProsusAI/finbert,0.9463,0.0118,0.9358,0.0155
+sentences_75agree,distilroberta-base,0.9432,0.012,0.9275,0.0167
+sentences_allagree,ProsusAI/finbert,0.9717,0.0103,0.9626,0.0136
+sentences_allagree,distilroberta-base,0.9765,0.0078,0.9688,0.0124

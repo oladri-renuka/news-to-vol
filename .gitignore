@@ -11,3 +11,6 @@ __pycache__/
 .DS_Store
 /wandb/
 .pytest_cache/
+/_mac_run_backup/
+/results/
+/results.tar.gz

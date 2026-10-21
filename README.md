@@ -1,6 +1,9 @@
 # Volatility forecasting with news sentiment
 
-**Result (2017–2023 walk-forward, 30 large caps, price features only):** both deep models beat HAR-RV on next-week volatility. The LSTM's pooled QLIKE is **0.495 ± 0.004 vs 0.576** (3 seeds; Diebold–Mariano p = 0.002), and the LSTM and Transformer are the only models in the 90% Model Confidence Set. However, a *linear* HAR on the same inputs (HAR-X, 0.511) recovers about 80% of the gain. Against HAR-X, the LSTM's remaining edge is small but significant (p = 0.002), and the Transformer's is not (p = 0.078). The news-sentiment experiments (V3/V4) need the FNSPID + GPU stage on RunPod; see [Status](#status).
+**Result (2017–2023 walk-forward, 30 large caps, 3 seeds):** deep models beat HAR-RV on next-week volatility, and **news sentiment does not help**.
+- The price-only LSTM's pooled QLIKE is **0.495 ± 0.004 vs 0.576** for HAR (Diebold–Mariano p = 0.002). A *linear* HAR on the same price inputs (HAR-X) recovers ~80% of that gain.
+- On the 82% of ticker-days with FNSPID news coverage, adding headline sentiment makes the LSTM significantly *worse* (0.510 vs 0.499, p = 0.029), leaves the Transformer unchanged (p = 0.45), and makes HAR significantly worse (p < 0.001).
+- The biggest misses are earnings and legal events whose headlines read as *neutral*. Tone is not the signal; the event is.
 
 ![Rolling QLIKE relative to HAR](reports/figures/rolling_qlike_vs_har.png)
 
@@ -12,7 +15,7 @@ bash scripts/run_all.sh          # tests -> data -> sentiment -> V1..V6 -> eval 
 streamlit run dashboard/app.py
 ```
 
-Individual stages are `make data | news | sentiment | panel | baselines | deep | ablation | eval | test | bench | daily | dashboard`. Every run starts from a YAML file in `configs/`. Override any key with `--set key=value`, and use `--smoke` for a 1-fold, 1-seed, 2-epoch check.
+Individual stages are `make data | news | sentiment | panel | baselines | deep | ablation | eval | test | bench | daily | dashboard`. Every run starts from a YAML file in `configs/`. Override any key with `--set key=value`, and use `--smoke` for a 1-fold, 1-seed, 2-epoch check. On a RunPod PyTorch image, run `bash scripts/runpod_setup.sh` first.
 
 ## Question
 
@@ -23,10 +26,10 @@ Does daily news sentiment, added to an LSTM or Transformer, improve **5-day real
 | Dataset | Use | License |
 |---|---|---|
 | yfinance | Adjusted daily OHLCV for the universe, ^GSPC and ^VIX, 2009–2023 (2009 is feature warm-up only) | Apache-2.0 library; Yahoo data for personal/research use |
-| [takala/financial_phrasebank](https://huggingface.co/datasets/takala/financial_phrasebank) | `sentences_allagree` and `sentences_75agree`, used to train and evaluate the sentiment model | CC BY-NC-SA 3.0 |
-| [FNSPID](https://huggingface.co/datasets/Zihan1004/FNSPID) | Headlines with date and ticker, from both `nasdaq_exteral_data.csv` and `All_external.csv` | CC BY 4.0 |
+| [takala/financial_phrasebank](https://huggingface.co/datasets/takala/financial_phrasebank) | `sentences_allagree` and `sentences_75agree`, used to train and evaluate the sentiment model (downloaded automatically) | CC BY-NC-SA 3.0 |
+| [FNSPID](https://huggingface.co/datasets/Zihan1004/FNSPID) | Headlines with date and ticker, from both `nasdaq_exteral_data.csv` and `All_external.csv`. 255,601 headlines for the universe | CC BY 4.0 |
 
-No raw data is committed (`data/` is in `.gitignore`). `make data` caches prices as Parquet. `make news` downloads FNSPID (~29 GB) and keeps only the universe headlines.
+No raw data is committed (`/data/` is in `.gitignore`). `make data` caches prices as Parquet. `make news` downloads FNSPID (~27 GB) and keeps only the universe headlines.
 
 **Universe rule** (`configs/universe.yaml`): walk down the S&P 500 members on 2010-01-01, ranked by end-2009 market cap. Keep a ticker if it has continuous adjusted prices under the same symbol through 2023. Stop at 30. BRK-B is excluded because it joined the index in Feb 2010. Decisions are logged in `reports/tables/universe_selection.csv`.
 
@@ -35,9 +38,15 @@ No raw data is committed (`data/` is in `.gitignore`). `make data` caches prices
 * **Tier 1, price-only (V1, V2):** all 30 tickers, every ticker-day. News coverage does not affect the universe.
 * **Tier 2, sentiment (V3, V4, V6):** a ticker-year is *covered* if it has ≥20 headlines. Sentiment comparisons are evaluated on **covered ticker-days only**, and the same rows are used for every model in the comparison (baselines and price-only models included), so the Diebold–Mariano tests are paired.
 * **A gap is not "no news".** In uncovered ticker-years every sentiment feature, `has_news` included, is *missing* (NaN), never 0. `has_news = 0` means "no headline that day" only within a covered year. Deep models impute the missing values after scaling and get a `news_covered` input. HAR+sentiment is fit on covered rows only. Market-wide sentiment aggregates use covered ticker-days only.
-* `reports/sentiment/tables/coverage_test_years.csv` reports the covered fraction of test ticker-days and the number of covered tickers for each test year 2017–2023.
 
-**News alignment** (`src/data/news.py`, tested in `tests/test_news_alignment.py`): FNSPID timestamps are parsed as UTC and converted to New York time. A headline at or after **16:00 ET**, or on a weekend/holiday, counts for the **next** trading day. FNSPID rows stamped `00:00:00` carry a date but no time, and they are most of the file (99% of `All_external.csv`). These are treated as published *after the close*. That can delay a signal by a day but can never leak one. `python -m src.data.news --audit` checks the "UTC" label against session-specific headlines ("Pre-Market", "Mid-Day", "After-Hours").
+Coverage of the test period (`reports/sentiment/tables/coverage_test_years.csv`):
+
+| Test year | 2017 | 2018 | 2019 | 2020 | 2021 | 2022 | 2023 | Pooled |
+|---|---|---|---|---|---|---|---|---|
+| Covered ticker-days | 80.0% | 93.3% | 93.3% | 96.7% | 63.3% | 73.3% | 73.3% | **81.9%** (43,145 / 52,650) |
+| Tickers covered (of 30) | 24 | 28 | 28 | 29 | 19 | 22 | 22 | |
+
+**News alignment** (`src/data/news.py`, tested in `tests/test_news_alignment.py`): FNSPID timestamps are parsed as UTC and converted to New York time. A headline at or after **16:00 ET**, or on a weekend/holiday, counts for the **next** trading day. **99.8%** of universe headlines are stamped `00:00:00`, i.e. they carry a date but no time. These are treated as published *after the close*, which can delay a signal by a day but can never leak one. The timezone audit (`python -m src.data.news --audit`) found only 6 session-specific timed headlines, too few to check the "UTC" label, and with nearly every row date-only, the label barely matters.
 
 ## Target and features
 
@@ -54,7 +63,7 @@ No raw data is committed (`data/` is in `.gitignore`). `make data` caches prices
 | GARCH(1,1)-t | `arch`, one fit per ticker per walk-forward window. Test forecasts filter through each origin with fixed parameters |
 | **HAR-RV** | Per-ticker OLS of log RV on log daily/weekly/monthly RV. **The bar to beat** |
 | HAR-X | Same OLS on *all* price features. Not in the original spec; added to separate "better inputs" from "deep model" |
-| HAR-RV + sentiment | HAR + the six sentiment features (V4) |
+| HAR-RV + sentiment | HAR + the six sentiment features (V4), fit on covered rows. A ticker with < 250 covered fit rows (e.g. MSFT, covered only from 2022) uses a pooled regression across tickers |
 | LSTM | 2 layers, hidden 64, 60-day window, 8-dim ticker embedding, dropout 0.2 |
 | Transformer | 3 pre-norm encoder layers, 4 heads, d_model 64, sinusoidal positions, ticker embedding added to each token, read-out at the last token |
 | Sentiment | `distilroberta-base` fine-tuned on FinancialPhraseBank (3 classes), compared with `ProsusAI/finbert` |
@@ -63,13 +72,26 @@ No raw data is committed (`data/` is in `.gitignore`). `make data` caches prices
 
 ## Results
 
-Pooled over 2017–2023. 52,650 (date, ticker) forecasts, the same rows for every model. DM is Diebold–Mariano vs HAR on the cross-sectional mean loss per date, with Newey–West variance (4 lags, since 5-day targets overlap) and the HLN correction.
+All numbers come from one run on a RunPod A40 (`reports/`). DM is a Diebold–Mariano test on the cross-sectional mean loss per date, with Newey–West variance (4 lags, since 5-day targets overlap) and the HLN correction. Deep-model DM tests use the seed-averaged forecast.
+
+### Sentiment model (FinancialPhraseBank, 10-fold stratified CV)
+
+| Config | Model | Accuracy | Macro-F1 |
+|---|---|---|---|
+| allagree (2,259 sentences) | **distilroberta, fine-tuned** | **0.977 ± 0.008** | **0.969 ± 0.012** |
+| | FinBERT (off the shelf) | 0.972 ± 0.010 | 0.963 ± 0.014 |
+| 75agree (3,448 sentences) | distilroberta, fine-tuned | 0.943 ± 0.012 | 0.928 ± 0.017 |
+| | FinBERT (off the shelf) | 0.946 ± 0.012 | 0.936 ± 0.016 |
+
+The two are a tie within one standard deviation. FinBERT's numbers are optimistic, because it was trained on FinancialPhraseBank, so these folds are not truly held out for it. The final model was trained on all of `75agree` and scored the 196,826 unique FNSPID headlines in about 30 seconds on the A40.
+
+### Tier 1: price-only models (V1, V2), all 52,650 ticker-days
 
 <!-- RESULTS:START -->
 | Model | MSE log-RV | QLIKE | DM p vs HAR (MSE / QLIKE) | DM p vs HAR-X (QLIKE) | In 90% MCS (QLIKE) | seeds |
 |---|---|---|---|---|---|---|
-| LSTM-price | 0.2283 ± 0.0023 | **0.4946 ± 0.0037** | <0.001 / 0.002 | 0.002 | ✓ | 3 |
-| Transformer-price | 0.2294 ± 0.0007 | 0.4982 ± 0.0022 | <0.001 / <0.001 | 0.078 | ✓ | 3 |
+| LSTM-price | 0.2284 ± 0.0029 | **0.4945 ± 0.0038** | <0.001 / 0.002 | 0.003 | ✓ | 3 |
+| Transformer-price | 0.2304 ± 0.0014 | 0.4987 ± 0.0039 | <0.001 / <0.001 | 0.084 | ✓ | 3 |
 | HAR-X | 0.2354 | 0.5114 | <0.001 / 0.008 | — | | 1 |
 | GARCH(1,1)-t | 0.2966 | 0.5503 | <0.001 / 0.151 | <0.001 | | 1 |
 | **HAR-RV** | 0.2653 | 0.5756 | — | 0.008 | | 1 |
@@ -83,61 +105,103 @@ QLIKE by test year (lowest in bold):
 | GARCH | 0.601 | 0.601 | 0.550 | 0.717 | 0.454 | 0.445 | 0.483 |
 | HAR | 0.611 | 0.594 | 0.548 | 0.919 | 0.449 | 0.421 | 0.483 |
 | HAR-X | 0.619 | 0.562 | 0.527 | 0.599 | **0.444** | 0.370 | 0.458 |
-| LSTM-price | 0.570 | 0.492 | 0.533 | **0.560** | 0.474 | 0.369 | 0.463 |
-| Transformer-price | **0.551** | **0.461** | **0.513** | 0.680 | 0.489 | **0.356** | **0.434** |
+| LSTM-price | 0.574 | 0.491 | 0.533 | **0.557** | 0.476 | 0.368 | 0.462 |
+| Transformer-price | **0.552** | **0.462** | **0.518** | 0.680 | 0.490 | **0.355** | **0.431** |
 <!-- RESULTS:END -->
 
-**Sentiment comparison (V3, V4), covered ticker-days only:** pending the pod run. It goes in `reports/sentiment/`.
+### Tier 2: does news help? (V3, V4), covered ticker-days only
 
-Per-year tables, DM tests (also vs HAR-X), MCS and vol-targeting results are in `reports/tables/`. `reports/results.md` is regenerated by `make eval`.
+These are the same 43,145 rows for every model, with paired tests.
 
-**Regimes (V5)**, as QLIKE relative to HAR (<1 is better). VIX is taken at the forecast origin.
+| Model | MSE log-RV | QLIKE | In 90% MCS (QLIKE) |
+|---|---|---|---|
+| LSTM-price | 0.2303 ± 0.0030 | **0.4988 ± 0.0039** | ✓ |
+| Transformer + sentiment | 0.2322 ± 0.0011 | 0.5033 ± 0.0019 | ✓ |
+| Transformer-price | 0.2328 ± 0.0020 | 0.5042 ± 0.0051 | ✓ |
+| LSTM + sentiment | 0.2355 ± 0.0005 | 0.5100 ± 0.0045 | ✓ |
+| HAR-X | 0.2384 | 0.5216 | |
+| **HAR-RV** | 0.2703 | 0.5930 | |
+| HAR + sentiment | 0.2894 | 0.6617 | |
+
+**What sentiment adds**, with each model compared to itself without news:
+
+| Pair | QLIKE without → with news | DM p (QLIKE) | DM p (MSE) | Verdict |
+|---|---|---|---|---|
+| LSTM | 0.4988 → 0.5100 | **0.029** | <0.001 | significantly **worse** |
+| Transformer | 0.5042 → 0.5033 | 0.45 | 0.069 | no difference |
+| HAR | 0.5930 → 0.6617 | **<0.001** | <0.001 | significantly **worse** |
+
+**Is the gain from sentiment or from the deep model? (V4)** It is from the deep model and the price inputs. Every deep model beats HAR by a wide margin with or without news, HAR + sentiment loses to plain HAR, and sentiment never improves a model significantly.
+
+### Regimes (V5), QLIKE relative to HAR (< 1 is better)
+
+VIX is taken at the forecast origin. Tier 1 uses all ticker-days; the sentiment rows use covered days.
 
 | Model | VIX < 20 | 20 ≤ VIX < 30 | VIX ≥ 30 | COVID crash | 2022 |
 |---|---|---|---|---|---|
 | GARCH | 1.001 | 1.016 | 0.671 | 0.607 | 1.056 |
 | HAR-X | 0.983 | 0.894 | 0.494 | 0.413 | 0.878 |
-| LSTM-price | 0.933 | 0.878 | **0.455** | **0.332** | 0.868 |
-| Transformer-price | **0.896** | **0.872** | 0.661 | 0.586 | **0.834** |
+| LSTM-price | 0.936 | 0.878 | **0.449** | **0.325** | 0.866 |
+| Transformer-price | **0.899** | **0.869** | 0.659 | 0.589 | **0.831** |
+| *covered days:* LSTM + sentiment | 0.927 | 0.890 | 0.512 | 0.404 | 0.855 |
+| *covered days:* Transformer + sentiment | 0.888 | 0.847 | 0.628 | 0.555 | 0.807 |
+| *covered days:* HAR + sentiment | 1.054 | 1.147 | 1.292 | 1.284 | 0.953 |
 
-Calm markets are close to a tie: HAR is hard to beat when nothing happens, though the Transformer has the lowest loss in 5 of the 7 test years. The gap opens in stress, where HAR's fixed log-linear coefficients mean-revert too fast; any model with range-based vol and VIX reacts faster. The two deep models break differently. The LSTM is best in the COVID crash (QLIKE 0.33× HAR). The Transformer is best in calm and moderate markets but lags the LSTM and even HAR-X in the crash (0.59×), which makes 2020 its only losing year.
+* **Calm markets are close to a tie:** HAR is hard to beat when nothing happens.
+* **The gap opens in stress.** HAR's fixed log-linear coefficients mean-revert too fast, and any model with range-based vol and VIX reacts faster.
+* **The two deep models break differently.** The LSTM is best in the COVID crash (0.33× HAR). The Transformer is best in calm and moderate markets but lags in the crash (0.59×), which makes 2020 its only losing year.
+* **Sentiment hurts most in crises.** On covered days the LSTM goes from 0.33× to 0.40× HAR's loss in the COVID crash, and HAR + sentiment is 1.29× worse than HAR in stressed markets. Headline counts and negativity spike far beyond anything in training, and the models extrapolate badly.
 
-### Status
+### Ablations (V6), on the V3 sentiment models, covered days
 
-| Experiment | Status |
-|---|---|
-| V1 baselines, V2 price-only LSTM and Transformer (3 seeds), V5 regimes (price models), DM/MCS, serving, pipeline, dashboard | Run on a Mac (M4, MPS). The numbers above come from those runs, on the same price-based 30-ticker universe that the pod uses |
-| Sentiment CV / fine-tune / headline scoring, V3, V4, V6, V5 for sentiment models | Code done and smoke-tested on a small headline sample. The full run needs the FNSPID download and a GPU: `bash scripts/run_all.sh` on RunPod |
+| Change | LSTM QLIKE (p vs full) | Transformer QLIKE (p vs full) | COVID crash, ratio to HAR (LSTM / Transformer) |
+|---|---|---|---|
+| Full model (V3) | 0.5100 | 0.5033 | 0.40 / 0.56 |
+| No VIX | 0.5327 (**0.037**) | 0.5399 (**0.009**) | **0.60 / 0.82** |
+| No range-based vol | 0.5278 (**<0.001**) | 0.5226 (**<0.001**) | 0.40 / 0.60 |
+| 20-day window instead of 60 | 0.5097 (0.25) | 0.5165 (**<0.001**) | 0.39 / 0.56 |
+
+* **VIX matters most, and almost entirely in crises.** Removing it costs both models significantly, with the largest damage in the COVID crash. It is what lets a model react to a market-wide shock before realized vol catches up.
+* **Range-based vol** (Parkinson, Garman–Klass) helps significantly in calm and moderate years.
+* **Long memory barely matters.** A 20-day window is as good as 60 for the LSTM. The Transformer benefits slightly from the longer window.
+
+Vol-targeting check (`reports/*/tables/vol_target.csv`, transaction costs ignored): sizing positions by deep-model forecasts cuts the share of 5-day periods where realized vol exceeds 1.5× target by about a third (7.7% vs 11.4% for HAR on covered days). They do it by forecasting slightly higher vol, so the mean realized/target ratio is 0.87–0.89 vs 0.96 for HAR.
 
 ## Failure analysis
 
-`reports/tables/failures_<model>.csv` lists each deep model's 20 worst forecasts by QLIKE, with HAR's forecast and that day's most negative headline.
+`reports/sentiment/tables/failures_<model>.csv` lists each deep model's 20 worst forecasts by QLIKE, with HAR's forecast and that day's most negative headline.
 
-* **Unannounced jumps dominate the loss.** The LSTM's worst cases are almost all *under*-predictions before single-stock events in calm markets (VIX 10–15). QCOM, 10–15 Apr 2019: forecast ≈18% annualized, realized ≈175%. That was the Apple–Qualcomm settlement, a +23% day. HPQ, 21–27 Feb 2019: forecast ≈14%, realized ≈135%, an earnings-driven drop. Price history alone cannot see these. This is where news (or a scheduled-earnings flag) should matter, and V3 tests it directly.
-* **Asymmetric bias.** Under-predictions make up 41% of the LSTM's QLIKE loss (vs 52% for HAR). The LSTM's mean log bias is close to zero (−0.02), while GARCH and EWMA sit high (+0.18–0.20) because they forecast the *mean* variance, whose log exceeds the mean log-variance (Jensen). That is why they look poor on log-MSE but reasonable on QLIKE.
-* **Where deep models break.** In 2021 both deep models are *worse* than HAR (LSTM 0.474, Transformer 0.489, HAR 0.449). After training on the 2020 crash it over-forecast the calmer 2021 market for months (see the hump in the figure around late 2021). The early-stopping year (2020) was not representative of the test year.
+* **The worst misses are event jumps, and their headlines read as neutral.** Both the price-only and sentiment LSTMs have the same top failures: *under*-predictions before single-stock events in calm markets (VIX 12–15).
+  * **HPQ, 21–27 Feb 2019:** forecast ≈15% annualized, realized ≈135%, an earnings-driven drop. The most negative headlines that week were "HP (HPQ) to Post Q1 Earnings: What's in Store for the Stock?" and "Notable earnings after Wednesday's close", with **p_neg = 0.00**.
+  * **QCOM, 11–15 Apr 2019:** forecast ≈19%, realized ≈175%. That was the Apple–Qualcomm settlement, a +23% day. Headlines beforehand were neutral, at most p_neg = 0.04.
+  * **The pattern:** news *polarity* is the wrong signal for volatility. An earnings date or a pending legal ruling is a vol event whatever its tone. A scheduled-event flag (earnings calendar) or an event-type classifier is the natural next feature; tone alone is not.
+* **Why HAR + sentiment fails: overfitting, not the fallback.** On its own per-ticker fits (38,376 rows), HAR + sentiment's QLIKE is 0.670 vs 0.595 for HAR on the same rows. Six extra regressors per ticker overfit, and the worst year is 2020 (1.217 vs 0.934). The pooled-fallback forecasts (4,769 rows) are nearly as good as HAR (0.594 vs 0.578).
+* **Asymmetric bias.** Under-predictions make up about 42% of the deep models' QLIKE loss, against 55% for HAR. The deep models' mean log bias is close to zero (−0.01 to −0.03). GARCH and EWMA sit high (+0.18–0.20 on the full sample) because they forecast the *mean* variance, whose log exceeds the mean log-variance (Jensen). That is why they look poor on log-MSE but reasonable on QLIKE.
+* **2021 is where the deep models lose.** Both are worse than HAR in 2021 (LSTM 0.476, Transformer 0.490, HAR 0.449). Early-stopped on the 2020 crash year, they over-forecast the calmer 2021 market for months, visible as the late-2021 hump in the figure. The validation year was not representative of the test year.
 
 ## Deployment
 
 * **Daily pipeline** (`src/pipeline/daily.py`, cron or `.github/workflows/daily.yml`): pulls the latest prices from yfinance, refits HAR on a trailing 3-year window, runs EWMA and the price-only LSTM, and writes to SQLite (`artifacts/store/forecasts.sqlite`). A bar for today is dropped until 16:30 ET, so an intraday partial bar is never used.
-* **FNSPID ends in 2023.** Live headlines need a separate news source. If `data/live/headlines.csv` exists (`published_at_utc, ticker, headline`), the pipeline aligns and scores it with the same 16:00 ET rule and stores it for the dashboard. The deployed model uses price features only.
+* **FNSPID ends in 2023.** Live headlines need a separate news source. If `data/live/headlines.csv` exists (`published_at_utc, ticker, headline`), the pipeline aligns and scores it with the same 16:00 ET rule and stores it for the dashboard. The deployed model uses price features only, which is also the better model per the results above.
 * **API** (`serve/api.py`, `serve/Dockerfile`): `GET /forecast/{ticker}` and `POST /predict` (raw 60×17 feature window → 5-day vol).
-* **Latency** (`python -m serve.benchmark`, CPU, 1 thread, Apple M4, 500 requests):
+* **Latency** (`python -m serve.benchmark`, CPU, 1 thread, 500 requests):
 
-| Model | Params | Size | Inference p50 / p95 | Request p50 / p95 (HTTP via TestClient) |
-|---|---|---|---|---|
-| LSTM | 56,881 | 0.22 MB | 4.1 / 4.9 ms | 10.8 / 15.3 ms |
+| Model | Params | Size | Machine | Inference p50 / p95 | Request p50 / p95 (HTTP via TestClient) |
+|---|---|---|---|---|---|
+| LSTM | 56,881 | 0.22 MB | RunPod x86 CPU | 0.97 / 1.89 ms | 8.5 / 12.0 ms |
+| LSTM | 56,881 | 0.22 MB | Apple M4 | 4.1 / 4.9 ms | 10.8 / 15.3 ms |
 
 * **Dashboard** (`dashboard/app.py`): forecast vs realized per ticker, rolling QLIKE vs HAR, per-year error table, the latest live forecasts, and the day's most negative headlines.
 
 ## Limitations
 
 * **Survivorship bias.** Requiring a firm to trade through 2023 drops failures and acquisitions, and the end-2009 ranking is approximate (compiled from public tables, not CRSP). The universe is large, liquid US stocks only.
-* **FNSPID timestamps.** 99.8% of universe headlines have no time of day, and only 6 intraday-specific timed headlines exist, too few to check the "UTC" label. The conservative next-day rule can delay real news by one day, biasing *against* sentiment.
-* **The sentiment results cover only part of the sample.** They hold on covered ticker-days, which are not a random subset: coverage is better for some firms and years. The tier-2 results answer "does news help *when we have news*?", not "does news help across the whole universe?".
+* **FNSPID timestamps.** 99.8% of headlines have no time of day, so the conservative next-day rule can delay real news by one day. This biases the test *against* sentiment and is the strongest caveat on the null result.
+* **The sentiment results cover only part of the sample.** They hold on covered ticker-days (82%), which are not a random subset: coverage is better for some firms and years. They answer "does news help *when we have news*?".
+* **Headline polarity is a coarse signal.** The model scores tone sentence by sentence and never reads article bodies or event types. The failure analysis suggests event *type* matters more than tone.
 * **The VIX closes at 16:15 ET**, 15 minutes after stocks. Using the day-*t* VIX is a small look-ahead.
 * **The volatility proxy** is close-to-close returns (no intraday RV), which makes QLIKE noisy for single stock-weeks.
-* **Comparing FinBERT on FinancialPhraseBank is optimistic for FinBERT**, because FinBERT was fine-tuned on that same dataset.
+* **CUDA vs MPS.** Deep-model numbers differ slightly between GPU backends, e.g. LSTM pooled QLIKE 0.4945 on CUDA vs 0.4946 on Apple MPS. All reported numbers come from the A40 run.
 * **The vol-targeting check ignores transaction costs** and uses non-overlapping 5-day holds.
 * **The deep models are tuned only by early stopping.** There is no hyperparameter search, by design (spec settings), so the comparison is fair but not maximal.
 
@@ -150,12 +214,22 @@ src/models/   baselines.py, deep.py, sentiment.py
 src/train.py  walk-forward runner (baselines + deep)      src/eval.py  losses, DM, MCS, regimes, figures
 src/pipeline/ daily.py                                    serve/       FastAPI, benchmark, Dockerfile
 dashboard/    Streamlit app                               notebooks/   analysis only, never training
-reports/      figures/ + tables/                          tests/       leakage and unit tests (pytest)
-scripts/      runpod_setup.sh, fetch_fnspid.sh, run_all.sh
+reports/      tier 1 (figures/, tables/), sentiment/ (tier 2), ablation/ (V6)
+tests/        leakage and unit tests (pytest)             scripts/     runpod_setup.sh, fetch_fnspid.sh, run_all.sh
 ```
 
 Runs are tracked in MLflow (`mlflow ui --backend-store-uri sqlite:///mlflow.db`). Set `tracking.backend: wandb` for Weights & Biases.
 
 ## Compute
 
-The price-only experiments run on a laptop: V1 in ~10 s, the LSTM ~25 s per fold, the Transformer ~1 min per fold on Apple MPS. FNSPID download + sentiment CV (2 configs × 10 folds) + scoring all headlines + V3/V6 sweeps are meant for one RunPod A40, about 2–3 GPU-hours.
+One RunPod A40, about 2 hours end to end:
+
+| Stage | Time |
+|---|---|
+| FNSPID download (27 GB) + filtering | 4 min |
+| Sentiment CV (2 configs × 10 folds) + final fine-tune + scoring | 7 min |
+| V1 + V4 baselines | < 1 min |
+| V2 + V3 deep models (4 models × 7 folds × 3 seeds) | 42 min |
+| V6 ablations (6 configs × 7 folds × 3 seeds) | 64 min |
+
+The price-only experiments also run on a laptop (Apple M4: the LSTM ~25 s per fold, the Transformer ~1 min per fold).

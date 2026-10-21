@@ -2,12 +2,12 @@ model,mcs_pvalue,in_mcs,loss
 EWMA,0.0,False,qlike
 GARCH,0.001,False,qlike
 HAR,0.006,False,qlike
-HAR-X,0.044,False,qlike
-Transformer-price,0.827,True,qlike
+HAR-X,0.051,False,qlike
+Transformer-price,0.834,True,qlike
 LSTM-price,1.0,True,qlike
 EWMA,0.0,False,mse
 GARCH,0.0,False,mse
 HAR,0.0,False,mse
 HAR-X,0.0,False,mse
-Transformer-price,0.869,True,mse
+Transformer-price,0.778,True,mse
 LSTM-price,1.0,True,mse
