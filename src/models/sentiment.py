@@ -34,6 +34,24 @@ PHRASEBANK_FILES = {
 
 
 # ---------------------------------------------------------------- data
+PHRASEBANK_URL = ("https://huggingface.co/datasets/takala/financial_phrasebank/resolve/main/"
+                  "data/FinancialPhraseBank-v1.0.zip")
+
+
+def ensure_phrasebank(zip_path: str | Path) -> Path:
+    """Download the FinancialPhraseBank v1.0 zip (CC BY-NC-SA 3.0, ~0.7 MB) if it is missing."""
+    path = resolve(zip_path)
+    if not path.exists():
+        import urllib.request
+
+        path.parent.mkdir(parents=True, exist_ok=True)
+        log.info("downloading FinancialPhraseBank to %s", path)
+        tmp = path.with_suffix(".part")
+        urllib.request.urlretrieve(PHRASEBANK_URL, tmp)
+        tmp.rename(path)
+    return path
+
+
 def load_phrasebank(zip_path: str | Path, config_name: str = "sentences_allagree") -> pd.DataFrame:
     """Read FinancialPhraseBank v1.0 directly from the zip.
 
@@ -41,7 +59,7 @@ def load_phrasebank(zip_path: str | Path, config_name: str = "sentences_allagree
     Lines look like 'sentence text@label', encoded in latin-1.
     """
     fname = f"FinancialPhraseBank-v1.0/{PHRASEBANK_FILES[config_name]}"
-    with zipfile.ZipFile(resolve(zip_path)) as z:
+    with zipfile.ZipFile(ensure_phrasebank(zip_path)) as z:
         raw = z.read(fname).decode("latin-1")
     rows = []
     for line in raw.splitlines():
