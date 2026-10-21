@@ -29,6 +29,7 @@ ablation:         ## V6
 
 eval:             ## tables, DM tests, regimes (V5), MCS, figures
 	$(PY) -m src.eval --config configs/eval.yaml
+	$(PY) -m src.eval --config configs/eval_sentiment.yaml
 	$(PY) -m src.eval --config configs/eval_ablation.yaml
 
 test:

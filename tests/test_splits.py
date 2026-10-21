@@ -46,3 +46,14 @@ def test_scaler_fit_on_train_rows_only(small_panel):
     wp.X[:, 400:, 0] += 1000.0  # contaminate the "future"
     mu, _ = wp.fit_scaler(tr)
     assert abs(mu[0]) < 100
+
+
+def test_windows_tolerate_missing_sentiment(small_panel):
+    """Sentiment NaN (dataset gap) must not drop samples; missing price features still must."""
+    p = small_panel.copy()
+    p.loc[p.index.get_level_values("date") < "2010-06-01", "sent_mean"] = np.nan
+    strict = WindowedPanel(p, ["log_rv_d", "sent_mean"], window=20)
+    lenient = WindowedPanel(p, ["log_rv_d", "sent_mean"], window=20, required_cols=["log_rv_d"])
+    d = lenient.dates[(lenient.dates >= "2010-01-01") & (lenient.dates < "2010-06-01")]
+    assert len(strict.sample_index(d)) == 0
+    assert len(lenient.sample_index(d)) > 0

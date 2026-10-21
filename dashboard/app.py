@@ -20,6 +20,8 @@ from src.metrics import qlike_vec  # noqa: E402
 
 st.set_page_config(page_title="Volatility forecasts", layout="wide")
 CFG = load_config("configs/eval.yaml")
+# Show price-only (tier 1) and sentiment (tier 2) models together.
+CFG["eval"]["models"].update(load_config("configs/eval_sentiment.yaml")["eval"]["models"])
 ANN = np.sqrt(252 / 5)
 
 

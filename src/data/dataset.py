@@ -16,7 +16,8 @@ import yaml
 from src.config import load_config, resolve
 from src.data.features import build_price_panel
 from src.data.prices import load_prices
-from src.data.sentiment_features import SENT_COLS, build_sentiment_features, empty_sentiment
+from src.data.sentiment_features import (COVER_COL, SENT_COLS, build_sentiment_features, covered_ticker_years,
+                                         empty_sentiment)
 from src.utils import setup_logging
 
 log = logging.getLogger(__name__)
@@ -66,9 +67,10 @@ def build_panel(cfg: dict, force: bool = False) -> pd.DataFrame:
     coverage = pd.read_csv(cov_path, index_col=0) if cov_path.exists() else None
     if coverage is not None:
         coverage.columns = coverage.columns.astype(int)
-    else:
-        log.warning("no news coverage table; the universe is selected on price availability only")
-    tickers, decisions = select_universe(cfg, coverage)
+    # Two-tier design: the universe is chosen on price availability only. News coverage
+    # does not drop tickers. It decides which ticker-years count in the sentiment comparison.
+    use_cov = cfg["news"].get("universe_uses_coverage", False)
+    tickers, decisions = select_universe(cfg, coverage if use_cov else None)
     decisions.to_csv(resolve(cfg["paths"]["reports"]) / "tables" / "universe_selection.csv", index=False)
     log.info("universe (%d): %s", len(tickers), tickers)
 
@@ -82,21 +84,47 @@ def build_panel(cfg: dict, force: bool = False) -> pd.DataFrame:
     scored_path = interim / "headlines_scored.parquet"
     if scored_path.exists():
         scored = pd.read_parquet(scored_path)
-        sent = build_sentiment_features(scored, calendar, tickers, cfg["news"]["decay"])
+        covered = covered_ticker_years(scored, cfg["news"]["min_headlines_per_year"])
+        sent = build_sentiment_features(scored, calendar, tickers, cfg["news"]["decay"], covered)
         sentiment_available = True
     else:
-        log.warning("no scored headlines at %s; sentiment features are zero", scored_path)
+        log.warning("no scored headlines at %s; sentiment features are missing (NaN)", scored_path)
         sent = empty_sentiment(calendar, tickers)
         sentiment_available = False
-    panel = panel.join(sent[SENT_COLS], how="left")
-    panel[SENT_COLS] = panel[SENT_COLS].fillna(0.0)
-    panel.attrs["sentiment_available"] = sentiment_available
+    # Sentiment stays NaN in uncovered ticker-years. A dataset gap is not "no news".
+    panel = panel.join(sent[SENT_COLS + [COVER_COL]], how="left")
+    panel[COVER_COL] = panel[COVER_COL].fillna(0.0)
+    cov_report = coverage_report(panel, cfg)
+    cov_report.to_csv(resolve(cfg["paths"]["reports"]) / "tables" / "coverage_test_years.csv")
+    log.info("news coverage of test ticker-days:\n%s", cov_report.to_string())
     out.parent.mkdir(parents=True, exist_ok=True)
     panel.to_parquet(out)
     with open(out.with_suffix(".json"), "w") as f:
         json.dump({"tickers": tickers, "sentiment_available": sentiment_available,
                    "n_rows": len(panel)}, f, indent=2)
     return panel
+
+
+def coverage_report(panel: pd.DataFrame, cfg: dict) -> pd.DataFrame:
+    """For each test year: the share of ticker-days with a realized target that are news-covered,
+    and how many tickers are covered."""
+    w = cfg["walk_forward"]
+    p = panel[panel["y"].notna()]
+    years = p.index.get_level_values("date").year
+    rows = []
+    for y in range(w["first_test_year"], w["last_test_year"] + 1):
+        g = p[years == y]
+        cov = g[COVER_COL] > 0
+        tick = g[cov].index.get_level_values("ticker").unique()
+        rows.append({"test_year": y, "ticker_days": len(g), "covered_ticker_days": int(cov.sum()),
+                     "covered_fraction": round(float(cov.mean()), 4) if len(g) else np.nan,
+                     "n_tickers_covered": len(tick), "n_tickers": g.index.get_level_values("ticker").nunique(),
+                     "tickers_covered": " ".join(sorted(tick))})
+    out = pd.DataFrame(rows).set_index("test_year")
+    g = p[(years >= w["first_test_year"]) & (years <= w["last_test_year"])]
+    out.loc["pooled"] = [len(g), int((g[COVER_COL] > 0).sum()), round(float((g[COVER_COL] > 0).mean()), 4),
+                         np.nan, np.nan, ""]
+    return out
 
 
 def panel_meta(cfg: dict) -> dict:
@@ -156,7 +184,13 @@ class WindowedPanel:
     on or before the forecast origin t.
     """
 
-    def __init__(self, panel: pd.DataFrame, feature_cols: list[str], window: int):
+    def __init__(self, panel: pd.DataFrame, feature_cols: list[str], window: int,
+                 required_cols: list[str] | None = None):
+        """`required_cols` must have no NaN anywhere in the window (default: all features).
+
+        Other features, i.e. sentiment in uncovered ticker-years, may be NaN. They are
+        imputed after scaling, and `news_covered` tells the model when that happened.
+        """
         self.feature_cols = list(feature_cols)
         self.window = window
         self.tickers = sorted(panel.index.get_level_values("ticker").unique())
@@ -166,7 +200,8 @@ class WindowedPanel:
         X = full[self.feature_cols].to_numpy(np.float32).reshape(T, N, F).transpose(1, 0, 2)
         self.X = np.ascontiguousarray(X)                      # [N, T, F]
         self.y = full["y"].to_numpy(np.float32).reshape(T, N).T  # [N, T]
-        bad = np.isnan(self.X).any(-1).astype(np.int32)        # [N, T]
+        req = [self.feature_cols.index(c) for c in (required_cols or self.feature_cols)]
+        bad = np.isnan(self.X[:, :, req]).any(-1).astype(np.int32)  # [N, T]
         csum = np.concatenate([np.zeros((N, 1), np.int32), np.cumsum(bad, 1)], 1)
         # A window ending at t is valid if t >= W-1 and has no NaN in X[t-W+1..t].
         self.valid_window = np.zeros((N, T), bool)

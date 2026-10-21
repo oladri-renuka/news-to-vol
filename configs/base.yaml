@@ -37,8 +37,14 @@ news:
   # Rows stamped exactly 00:00:00 carry a date but no real time. Under "next_day"
   # they are assumed to be after the close and shifted forward, which is the conservative choice.
   date_only_policy: next_day
+  # Two-tier design, set after the FNSPID coverage audit and before any sentiment modelling:
+  #  * the universe ignores news coverage (the price-based 30), and V1/V2 use every ticker-day;
+  #  * a ticker-year is "covered" if it has >= min_headlines_per_year headlines. Sentiment features
+  #    are NaN outside covered ticker-years, and sentiment comparisons (V3/V4/V6) are evaluated
+  #    on covered ticker-days only, with the same rows for every model.
   min_headlines_per_year: 20
-  min_covered_year_fraction: 1.0   # share of study years that must reach the minimum
+  universe_uses_coverage: false
+  min_covered_year_fraction: 1.0   # used only if universe_uses_coverage is true
   decay: 0.5              # s_t = x_t + decay * s_{t-1}
 
 features:
@@ -67,6 +73,7 @@ features:
     - has_news
     - mkt_sent_mean
     - mkt_log_news_count
+    - news_covered          # 1 in covered ticker-years; distinguishes a dataset gap from a quiet day
   har: [log_rv_d, log_rv_w, log_rv_m]
 
 walk_forward:

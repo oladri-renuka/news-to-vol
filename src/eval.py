@@ -56,6 +56,22 @@ def seed_mean(df: pd.DataFrame) -> pd.DataFrame:
                  test_year=("test_year", "first"), y_pred=("y_pred", "mean"), var_pred=("var_pred", "mean"))
 
 
+def covered_share(df: pd.DataFrame) -> pd.DataFrame:
+    """Covered fraction of test ticker-days and the number of covered tickers, per test year."""
+    d = df.drop_duplicates(["date", "ticker"])
+    g = d.groupby("test_year")
+    out = pd.DataFrame({
+        "ticker_days": g.size(),
+        "covered_ticker_days": g.news_covered.apply(lambda x: int((x > 0).sum())),
+        "covered_fraction": g.news_covered.apply(lambda x: round(float((x > 0).mean()), 4)),
+        "n_tickers_covered": g.apply(lambda x: x.loc[x.news_covered > 0, "ticker"].nunique()),
+        "n_tickers": g.ticker.nunique(),
+    })
+    out.loc["pooled"] = [len(d), int((d.news_covered > 0).sum()), round(float((d.news_covered > 0).mean()), 4),
+                         np.nan, d.ticker.nunique()]
+    return out
+
+
 # ---------------------------------------------------------------- metrics tables
 def _losses(df: pd.DataFrame) -> pd.DataFrame:
     return df.assign(se=(df.y - df.y_pred) ** 2, ql=qlike_vec(df.rv2_true, df.var_pred))
@@ -283,13 +299,25 @@ def main() -> None:
     cfg = load_config(args.config, args.set)
     ecfg = cfg["eval"]
     bench, h = ecfg["benchmark"], cfg["target"]["horizon"]
-    preds = align(load_predictions(cfg))
+    raw = load_predictions(cfg)
+    tables = resolve(cfg["paths"]["reports"]) / "tables"
+    tables.mkdir(parents=True, exist_ok=True)
+    if ecfg.get("mask_covered") and bench in raw and "news_covered" in raw[bench]:
+        cov = covered_share(raw[bench])
+        cov.to_csv(tables / "coverage_test_years.csv")
+        print("News coverage of test ticker-days (the sentiment comparison uses covered rows only):")
+        print(cov.to_string() + "\n")
+    if ecfg.get("mask_covered"):
+        # Sentiment comparison: covered ticker-days only, the same rows for every model (paired tests).
+        for m, df in raw.items():
+            if "news_covered" not in df:
+                raise SystemExit(f"{m}: predictions lack news_covered; re-run training after rebuilding the panel")
+            raw[m] = df[df.news_covered > 0]
+    preds = align(raw)
     if bench not in preds:
         raise SystemExit(f"benchmark {bench} has no predictions; run V1 first")
     pm = {m: seed_mean(df) for m, df in preds.items()}
 
-    tables = resolve(cfg["paths"]["reports"]) / "tables"
-    tables.mkdir(parents=True, exist_ok=True)
     yt = per_year_table(preds); yt.to_csv(tables / "results_by_year.csv", index=False)
     dm = dm_table(pm, bench, h); dm.to_csv(tables / "dm_tests.csv", index=False)
     extra = [b for b in ecfg.get("extra_benchmarks", []) if b in pm]

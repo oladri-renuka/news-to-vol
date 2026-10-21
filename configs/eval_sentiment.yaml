@@ -1,0 +1,20 @@
+inherit: base.yaml
+name: eval_sentiment
+paths:
+  reports: reports/sentiment
+# Tier 2, the sentiment comparison (V3, V4, V5 for sentiment models): covered ticker-days only
+# (ticker-years with >= news.min_headlines_per_year headlines). Every model, baselines and
+# price-only models included, is scored on the identical rows, so the DM tests are paired.
+eval:
+  benchmark: HAR
+  mask_covered: true
+  # LSTM-sent vs LSTM-price etc. isolates what news adds; HAR+sent vs HAR does the same without deep learning.
+  extra_benchmarks: [HAR+sent, HAR-X, LSTM-price, Transformer-price]
+  models:
+    HAR: v1_baselines/har.parquet
+    HAR-X: v1_baselines/har_x.parquet
+    HAR+sent: v4_har_sent/har_sent.parquet
+    LSTM-price: v2_lstm_price/lstm.parquet
+    LSTM-sent: v3_lstm_sent/lstm.parquet
+    Transformer-price: v2_transformer_price/transformer.parquet
+    Transformer-sent: v3_transformer_sent/transformer.parquet

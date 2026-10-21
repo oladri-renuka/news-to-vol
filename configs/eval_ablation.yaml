@@ -1,8 +1,12 @@
-inherit: eval.yaml
+inherit: base.yaml
 name: eval_ablation
 paths:
   reports: reports/ablation
+# V6 ablations are built on the V3 sentiment models, so they use the same covered-days mask.
 eval:
+  benchmark: HAR
+  mask_covered: true
+  extra_benchmarks: [LSTM-sent, Transformer-sent]
   models:
     HAR: v1_baselines/har.parquet
     LSTM-sent: v3_lstm_sent/lstm.parquet

@@ -16,6 +16,7 @@ for c in v2_lstm_price v2_transformer_price v3_lstm_sent v3_transformer_sent; do
 done
 for c in configs/v6_*.yaml; do python -m src.train --config "$c"; done
 python -m src.eval --config configs/eval.yaml
+python -m src.eval --config configs/eval_sentiment.yaml
 python -m src.eval --config configs/eval_ablation.yaml
 python -m serve.benchmark
 python -m src.pipeline.daily --offline --asof 2023-12-29

@@ -38,3 +38,31 @@ def test_no_future_leakage():
     s2 = _scored([("A", "2021-01-04", 0.9, 0.05)])
     f2 = build_sentiment_features(s2, CAL, ["A"], decay=0.5).xs("A", level="ticker")
     pd.testing.assert_frame_equal(f.iloc[:3], f2.iloc[:3])
+
+
+# ---- two-tier coverage design
+def test_coverage_set_threshold():
+    from src.data.sentiment_features import covered_ticker_years
+
+    rows = [("A", "2021-01-04", 0.5, 0.1)] * 3 + [("B", "2021-01-04", 0.5, 0.1)]
+    cov = covered_ticker_years(_scored(rows), min_per_year=2)
+    assert cov == {("A", 2021)}
+
+
+def test_gap_years_are_nan_not_zero():
+    """A dataset gap (uncovered ticker-year) must never read as has_news = 0."""
+    s = _scored([("A", "2021-01-04", 0.9, 0.05)])
+    f = build_sentiment_features(s, CAL, ["A", "B"], decay=0.5, covered={("A", 2021)})
+    a, b = f.xs("A", level="ticker"), f.xs("B", level="ticker")
+    assert (a.news_covered == 1).all() and (b.news_covered == 0).all()
+    # Covered year: quiet days are a genuine has_news = 0
+    assert a.has_news.tolist() == [1, 0, 0, 0, 0]
+    # Uncovered year: every sentiment feature is unknown, including has_news and the market aggregates
+    for c in ["sent_mean", "log_news_count", "max_neg", "has_news", "mkt_sent_mean", "mkt_log_news_count"]:
+        assert b[c].isna().all(), c
+
+
+def test_market_aggregate_ignores_uncovered_tickers():
+    s = _scored([("A", "2021-01-04", 0.9, 0.05), ("B", "2021-01-04", 0.0, 0.9)])
+    f = build_sentiment_features(s, CAL, ["A", "B"], decay=0.5, covered={("A", 2021)})
+    assert np.isclose(f.xs("A", level="ticker").mkt_sent_mean.iloc[0], 0.85)  # B's headline excluded

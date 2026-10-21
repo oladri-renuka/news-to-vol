@@ -37,7 +37,7 @@ def feature_list(cfg: dict) -> list[str]:
 
 
 def _attach_truth(pred: pd.DataFrame, panel: pd.DataFrame, test_year: int, seed: int) -> pd.DataFrame:
-    truth = panel[["y", "rv2_true", "vix"]].reset_index()
+    truth = panel[["y", "rv2_true", "vix", "news_covered"]].reset_index()
     out = pred.merge(truth, on=["date", "ticker"], how="left")
     out["test_year"] = test_year
     out["seed"] = seed
@@ -69,8 +69,10 @@ def run_baselines(cfg: dict, panel: pd.DataFrame, folds, tracker: Tracker) -> di
                     # "better inputs" from "deep model".
                     cols = [c for c in cfg["features"]["price"] if not c.startswith("dow_")]
                 if m == "har_sent":
-                    cols += [c for c in cfg["features"]["sentiment"]
-                             if c not in set(cfg["experiment"].get("drop_features", []))]
+                    # Sentiment is NaN outside covered ticker-years, so fit_har/predict_har
+                    # drop those rows: HAR+sent is fit and evaluated on covered ticker-days only.
+                    cols += [c for c in cfg["features"]["sentiment"] if c != "news_covered"
+                             and c not in set(cfg["experiment"].get("drop_features", []))]
                 hcfg = cfg["baselines"]
                 fitted = B.fit_har(panel, fit_dates, cols, hcfg.get("har_pooled", False), hcfg.get("har_ridge", 0.0))
                 p = B.predict_har(panel, fitted, test, cols)
@@ -185,7 +187,10 @@ def run_deep(cfg: dict, panel: pd.DataFrame, folds, seeds: list[int], tracker: T
     device = get_device(cfg["train"].get("device", "auto"))
     log.info("device: %s", device)
     feats = feature_list(cfg)
-    wp = WindowedPanel(panel, feats, cfg["model"]["window"])
+    # Price features must be complete in every window. Sentiment may be NaN (uncovered
+    # ticker-years), is imputed after scaling, and is flagged by news_covered.
+    required = [f for f in feats if f not in set(cfg["features"]["sentiment"])]
+    wp = WindowedPanel(panel, feats, cfg["model"]["window"], required_cols=required)
     calendar = wp.dates
     name = cfg["model"]["type"]
     out_models = resolve(cfg["paths"]["artifacts"]) / "models" / cfg["name"]
