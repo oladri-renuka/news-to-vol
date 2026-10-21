@@ -1,9 +1,11 @@
 # Volatility forecasting with news sentiment
 
-**Result (2017–2023 walk-forward, 30 large caps, 3 seeds):** deep models beat HAR-RV on next-week volatility, and **news sentiment does not help**.
-- The price-only LSTM's pooled QLIKE is **0.495 ± 0.004 vs 0.576** for HAR (Diebold–Mariano p = 0.002). A *linear* HAR on the same price inputs (HAR-X) recovers ~80% of that gain.
-- On the 82% of ticker-days with FNSPID news coverage, adding headline sentiment makes the LSTM significantly *worse* (0.510 vs 0.499, p = 0.029), leaves the Transformer unchanged (p = 0.45), and makes HAR significantly worse (p < 0.001).
+**Result (2017–2023 walk-forward, 30 large caps, 3 seeds, no look-ahead):** deep models beat HAR-RV on next-week volatility, and **news sentiment does not help**.
+- The price-only LSTM's pooled QLIKE is **0.498 ± 0.002 vs 0.576** for HAR (Diebold–Mariano p = 0.002). It also beats a *linear* HAR on the same price inputs (HAR-X, p < 0.001), although HAR-X recovers ~80% of the gain over HAR.
+- In the COVID crash the LSTM's loss is **0.37× HAR's**.
+- On the 82% of ticker-days with FNSPID news coverage, sentiment never improves QLIKE. The LSTM gets worse (0.504 → 0.513, p = 0.06), the Transformer doesn't change (p = 0.81), and HAR gets significantly worse (p < 0.001).
 - The biggest misses are earnings and legal events whose headlines read as *neutral*. Tone is not the signal; the event is.
+- *These numbers use VIX lagged one day.* An earlier version used same-day VIX, which closes 15 minutes after the stocks. See [Look-ahead audit](#look-ahead-audit-vix-timing) for the before/after comparison.
 
 ![Rolling QLIKE relative to HAR](reports/figures/rolling_qlike_vs_har.png)
 
@@ -51,7 +53,7 @@ Coverage of the test period (`reports/sentiment/tables/coverage_test_years.csv`)
 ## Target and features
 
 * **Target:** `RV(t,t+5) = sqrt(Σ_{i=1..5} r²_{t+i})` from daily log returns. Models predict `log RV`.
-* **Price features** (data through day *t* only; `tests/test_features.py` perturbs the future and checks that nothing at *t* moves): HAR daily/weekly/monthly RV, Parkinson and Garman–Klass vol (daily and 5-day), |r|, r, 60-day volume z-score, log VIX and its change, day-of-week.
+* **Price features** (data through day *t* only; `tests/test_features.py` perturbs the future and checks that nothing at *t* moves): HAR daily/weekly/monthly RV, Parkinson and Garman–Klass vol (daily and 5-day), |r|, r, 60-day volume z-score, log VIX and its change (**from day t−1**, see below), day-of-week.
 * **Sentiment features:** for each ticker and day, the mean of `p_pos − p_neg`, the log headline count, the max `p_neg`, and a `has_news` flag. Also market-wide mean sentiment and count, and `news_covered`. All use exponential decay `S_t = x_t + 0.5·S_{t−1}`, so yesterday's news counts a little today. All are missing in uncovered ticker-years (see above).
 * **From log forecasts to variance forecasts.** QLIKE needs a variance forecast. For log-space models it is `exp(2ŷ)·smear`, where `smear` is the Duan smearing factor estimated on the fit window (validation year for deep models), never on test data. GARCH and EWMA produce variances natively.
 
@@ -72,7 +74,7 @@ Coverage of the test period (`reports/sentiment/tables/coverage_test_years.csv`)
 
 ## Results
 
-All numbers come from one run on a RunPod A40 (`reports/`). DM is a Diebold–Mariano test on the cross-sectional mean loss per date, with Newey–West variance (4 lags, since 5-day targets overlap) and the HLN correction. Deep-model DM tests use the seed-averaged forecast.
+The sentiment model and headline scoring ran on a RunPod A40. All forecasting results come from one run on an Apple M4 (MPS) with VIX lagged one day (`reports/`). DM is a Diebold–Mariano test on the cross-sectional mean loss per date, with Newey–West variance (4 lags, since 5-day targets overlap) and the HLN correction. Deep-model DM tests use the seed-averaged forecast.
 
 ### Sentiment model (FinancialPhraseBank, 10-fold stratified CV)
 
@@ -90,11 +92,11 @@ The two are a tie within one standard deviation. FinBERT's numbers are optimisti
 <!-- RESULTS:START -->
 | Model | MSE log-RV | QLIKE | DM p vs HAR (MSE / QLIKE) | DM p vs HAR-X (QLIKE) | In 90% MCS (QLIKE) | seeds |
 |---|---|---|---|---|---|---|
-| LSTM-price | 0.2284 ± 0.0029 | **0.4945 ± 0.0038** | <0.001 / 0.002 | 0.003 | ✓ | 3 |
-| Transformer-price | 0.2304 ± 0.0014 | 0.4987 ± 0.0039 | <0.001 / <0.001 | 0.084 | ✓ | 3 |
-| HAR-X | 0.2354 | 0.5114 | <0.001 / 0.008 | — | | 1 |
+| LSTM-price | 0.2306 ± 0.0013 | **0.4977 ± 0.0023** | <0.001 / 0.002 | <0.001 | ✓ | 3 |
+| Transformer-price | 0.2340 ± 0.0009 | 0.5053 ± 0.0040 | <0.001 / <0.001 | 0.163 | ✓ | 3 |
+| HAR-X | 0.2368 | 0.5142 | <0.001 / 0.011 | — | | 1 |
 | GARCH(1,1)-t | 0.2966 | 0.5503 | <0.001 / 0.151 | <0.001 | | 1 |
-| **HAR-RV** | 0.2653 | 0.5756 | — | 0.008 | | 1 |
+| **HAR-RV** | 0.2653 | 0.5756 | — | 0.011 | | 1 |
 | EWMA | 0.2972 | 0.6007 | <0.001 / 0.257 | <0.001 | | 1 |
 
 QLIKE by test year (lowest in bold):
@@ -104,9 +106,9 @@ QLIKE by test year (lowest in bold):
 | EWMA | 0.698 | 0.637 | 0.629 | 0.791 | 0.496 | 0.434 | 0.518 |
 | GARCH | 0.601 | 0.601 | 0.550 | 0.717 | 0.454 | 0.445 | 0.483 |
 | HAR | 0.611 | 0.594 | 0.548 | 0.919 | 0.449 | 0.421 | 0.483 |
-| HAR-X | 0.619 | 0.562 | 0.527 | 0.599 | **0.444** | 0.370 | 0.458 |
-| LSTM-price | 0.574 | 0.491 | 0.533 | **0.557** | 0.476 | 0.368 | 0.462 |
-| Transformer-price | **0.552** | **0.462** | **0.518** | 0.680 | 0.490 | **0.355** | **0.431** |
+| HAR-X | 0.616 | 0.570 | 0.528 | 0.610 | **0.445** | 0.370 | 0.458 |
+| LSTM-price | 0.570 | 0.507 | 0.532 | **0.583** | 0.471 | 0.367 | 0.451 |
+| Transformer-price | **0.550** | **0.474** | **0.517** | 0.713 | 0.489 | **0.360** | **0.430** |
 <!-- RESULTS:END -->
 
 ### Tier 2: does news help? (V3, V4), covered ticker-days only
@@ -115,23 +117,23 @@ These are the same 43,145 rows for every model, with paired tests.
 
 | Model | MSE log-RV | QLIKE | In 90% MCS (QLIKE) |
 |---|---|---|---|
-| LSTM-price | 0.2303 ± 0.0030 | **0.4988 ± 0.0039** | ✓ |
-| Transformer + sentiment | 0.2322 ± 0.0011 | 0.5033 ± 0.0019 | ✓ |
-| Transformer-price | 0.2328 ± 0.0020 | 0.5042 ± 0.0051 | ✓ |
-| LSTM + sentiment | 0.2355 ± 0.0005 | 0.5100 ± 0.0045 | ✓ |
-| HAR-X | 0.2384 | 0.5216 | |
+| LSTM-price | 0.2328 ± 0.0019 | **0.5035 ± 0.0046** | ✓ |
+| Transformer + sentiment | 0.2342 ± 0.0012 | 0.5092 ± 0.0017 | ✓ |
+| Transformer-price | 0.2364 ± 0.0007 | 0.5117 ± 0.0050 | ✓ |
+| LSTM + sentiment | 0.2375 ± 0.0004 | 0.5125 ± 0.0031 | ✓ |
+| HAR-X | 0.2399 | 0.5249 | |
 | **HAR-RV** | 0.2703 | 0.5930 | |
 | HAR + sentiment | 0.2894 | 0.6617 | |
 
 **What sentiment adds**, with each model compared to itself without news:
 
-| Pair | QLIKE without → with news | DM p (QLIKE) | DM p (MSE) | Verdict |
-|---|---|---|---|---|
-| LSTM | 0.4988 → 0.5100 | **0.029** | <0.001 | significantly **worse** |
-| Transformer | 0.5042 → 0.5033 | 0.45 | 0.069 | no difference |
-| HAR | 0.5930 → 0.6617 | **<0.001** | <0.001 | significantly **worse** |
+| Pair | QLIKE without → with news | DM p (QLIKE) | MSE without → with | DM p (MSE) | Verdict |
+|---|---|---|---|---|---|
+| LSTM | 0.5035 → 0.5125 | 0.062 | 0.2328 → 0.2375 | <0.001 | worse (significant on MSE, borderline on QLIKE) |
+| Transformer | 0.5117 → 0.5092 | 0.81 | 0.2364 → 0.2342 | 0.036 | no QLIKE difference; slightly better on MSE |
+| HAR | 0.5930 → 0.6617 | **<0.001** | 0.2703 → 0.2894 | <0.001 | significantly **worse** |
 
-**Is the gain from sentiment or from the deep model? (V4)** It is from the deep model and the price inputs. Every deep model beats HAR by a wide margin with or without news, HAR + sentiment loses to plain HAR, and sentiment never improves a model significantly.
+**Is the gain from sentiment or from the deep model? (V4)** It is from the deep model and the price inputs. Every deep model beats HAR by a wide margin with or without news, HAR + sentiment loses to plain HAR, and sentiment never improves QLIKE. The one positive is the Transformer's slightly lower MSE with news (p = 0.036). That doesn't show up in QLIKE, the loss that matters for variance forecasts, so it isn't a practical gain.
 
 ### Regimes (V5), QLIKE relative to HAR (< 1 is better)
 
@@ -140,32 +142,51 @@ VIX is taken at the forecast origin. Tier 1 uses all ticker-days; the sentiment 
 | Model | VIX < 20 | 20 ≤ VIX < 30 | VIX ≥ 30 | COVID crash | 2022 |
 |---|---|---|---|---|---|
 | GARCH | 1.001 | 1.016 | 0.671 | 0.607 | 1.056 |
-| HAR-X | 0.983 | 0.894 | 0.494 | 0.413 | 0.878 |
-| LSTM-price | 0.936 | 0.878 | **0.449** | **0.325** | 0.866 |
-| Transformer-price | **0.899** | **0.869** | 0.659 | 0.589 | **0.831** |
-| *covered days:* LSTM + sentiment | 0.927 | 0.890 | 0.512 | 0.404 | 0.855 |
-| *covered days:* Transformer + sentiment | 0.888 | 0.847 | 0.628 | 0.555 | 0.807 |
+| HAR-X | 0.986 | 0.906 | 0.496 | 0.428 | 0.878 |
+| LSTM-price | 0.936 | 0.886 | **0.464** | **0.373** | 0.864 |
+| Transformer-price | **0.905** | **0.868** | 0.692 | 0.639 | **0.844** |
+| *covered days:* LSTM + sentiment | 0.931 | 0.890 | 0.520 | 0.443 | 0.839 |
+| *covered days:* Transformer + sentiment | 0.904 | 0.848 | 0.629 | 0.577 | 0.810 |
 | *covered days:* HAR + sentiment | 1.054 | 1.147 | 1.292 | 1.284 | 0.953 |
 
 * **Calm markets are close to a tie:** HAR is hard to beat when nothing happens.
 * **The gap opens in stress.** HAR's fixed log-linear coefficients mean-revert too fast, and any model with range-based vol and VIX reacts faster.
-* **The two deep models break differently.** The LSTM is best in the COVID crash (0.33× HAR). The Transformer is best in calm and moderate markets but lags in the crash (0.59×), which makes 2020 its only losing year.
-* **Sentiment hurts most in crises.** On covered days the LSTM goes from 0.33× to 0.40× HAR's loss in the COVID crash, and HAR + sentiment is 1.29× worse than HAR in stressed markets. Headline counts and negativity spike far beyond anything in training, and the models extrapolate badly.
+* **The two deep models break differently.** The LSTM is best in the COVID crash (0.37× HAR). The Transformer is best in calm and moderate markets but lags in the crash (0.64×, behind even HAR-X's 0.43×).
+* **Sentiment hurts most in crises.** On covered days the LSTM goes from 0.37× to 0.44× HAR's loss in the COVID crash, and HAR + sentiment is 1.29× worse than HAR in stressed markets. Headline counts and negativity spike far beyond anything in training, and the models extrapolate badly.
 
 ### Ablations (V6), on the V3 sentiment models, covered days
 
 | Change | LSTM QLIKE (p vs full) | Transformer QLIKE (p vs full) | COVID crash, ratio to HAR (LSTM / Transformer) |
 |---|---|---|---|
-| Full model (V3) | 0.5100 | 0.5033 | 0.40 / 0.56 |
-| No VIX | 0.5327 (**0.037**) | 0.5399 (**0.009**) | **0.60 / 0.82** |
-| No range-based vol | 0.5278 (**<0.001**) | 0.5226 (**<0.001**) | 0.40 / 0.60 |
-| 20-day window instead of 60 | 0.5097 (0.25) | 0.5165 (**<0.001**) | 0.39 / 0.56 |
+| Full model (V3) | 0.5125 | 0.5092 | 0.44 / 0.58 |
+| No VIX | 0.5354 (**0.010**) | 0.5465 (**0.018**) | **0.60 / 0.88** |
+| No range-based vol | 0.5342 (**<0.001**) | 0.5305 (**<0.001**) | 0.43 / 0.63 |
+| 20-day window instead of 60 | 0.5144 (**0.006**) | 0.5175 (**0.002**) | 0.45 / 0.54 |
 
-* **VIX matters most, and almost entirely in crises.** Removing it costs both models significantly, with the largest damage in the COVID crash. It is what lets a model react to a market-wide shock before realized vol catches up.
-* **Range-based vol** (Parkinson, Garman–Klass) helps significantly in calm and moderate years.
-* **Long memory barely matters.** A 20-day window is as good as 60 for the LSTM. The Transformer benefits slightly from the longer window.
+* **VIX matters most, and most in crises, even lagged one day.** Removing it costs both models significantly, with the largest damage in the COVID crash (LSTM 0.44 → 0.60× HAR, Transformer 0.58 → 0.88×). It lets a model react to a market-wide shock before the stock's own realized vol catches up. Part of VIX's apparent crisis value in the first version was the same-day look-ahead; see the audit below.
+* **Range-based vol** (Parkinson, Garman–Klass) matters almost as much as VIX for the LSTM (+0.022 vs +0.023 when removed) and less for the Transformer (+0.021 vs +0.037). Its value comes in calm and moderate years, not crises.
+* **The 60-day window helps slightly.** A 20-day window is significantly worse for both models, but by little (+0.002 LSTM, +0.008 Transformer).
 
-Vol-targeting check (`reports/*/tables/vol_target.csv`, transaction costs ignored): sizing positions by deep-model forecasts cuts the share of 5-day periods where realized vol exceeds 1.5× target by about a third (7.7% vs 11.4% for HAR on covered days). They do it by forecasting slightly higher vol, so the mean realized/target ratio is 0.87–0.89 vs 0.96 for HAR.
+Vol-targeting check (`reports/*/tables/vol_target.csv`, transaction costs ignored): sizing positions by deep-model forecasts cuts the share of 5-day periods where realized vol exceeds 1.5× target by about 30% (8.0–8.1% vs 11.4% for HAR on covered days). They do it by forecasting slightly higher vol, so the mean realized/target ratio is 0.87–0.89 vs 0.96 for HAR.
+
+## Look-ahead audit: VIX timing
+
+The forecast origin is the 16:00 ET stock close on day *t*. VIX closes at 16:15 ET. The first version of this project used day *t*'s VIX close as a feature, a 15-minute look-ahead. The ablation shows VIX matters most in crises, which is exactly where the headline claims sit, so the look-ahead had to be measured, not just mentioned. All VIX features now use day *t−1* (`features.vix_lag: 1`). `tests/test_features.py` fails if a change to day *t*'s VIX moves any feature at *t*. Every experiment was rerun. The old results are preserved in [`reports/archive_vix_same_day/`](reports/archive_vix_same_day/), and `scripts/compare_vix_lag.py` produces [`reports/vix_lag_comparison.md`](reports/vix_lag_comparison.md).
+
+**Same machine (Apple M4), price-only, all ticker-days.** Only the VIX timing differs:
+
+| Model | QLIKE, same-day → lagged VIX | COVID / HAR | VIX ≥ 30 / HAR | Lagged vs same-day, DM p |
+|---|---|---|---|---|
+| LSTM | 0.4946 → 0.4977 | 0.332 → 0.373 | 0.455 → 0.464 | 0.18 (not significant) |
+| Transformer | 0.4982 → 0.5053 | 0.586 → 0.639 | 0.661 → 0.692 | **0.032** |
+| HAR-X | 0.5114 → 0.5142 | 0.413 → 0.428 | 0.494 → 0.496 | — |
+
+* **The leak was real and concentrated in crises, as suspected.** The crash-period advantage shrank for every VIX-using model: the LSTM went from 0.33× to 0.37× HAR. Pooled loss barely moved for the LSTM (not significant) but did for the Transformer (p = 0.03).
+* **Every headline claim survives.** The deep models still beat HAR (p ≤ 0.002), the LSTM still beats HAR-X (p < 0.001; before the fix p = 0.003), VIX is still the most important input in crises, and sentiment still doesn't help.
+* **Two claims softened:**
+  * The LSTM's degradation from sentiment went from p = 0.029 to p = 0.062 on QLIKE, though it is still significant on MSE.
+  * The Transformer-vs-HAR-X comparison went from p = 0.084 to 0.163, so the Transformer's edge over a linear model on the same inputs is not significant.
+* **A note on comparing across machines.** The "no-VIX" ablation models don't use VIX, so they act as a placebo for comparing the old A40 run with the new M4 run. They moved by +0.003 (LSTM) and +0.007 (Transformer) pooled QLIKE, and the Transformer's COVID ratio moved by 0.06, from GPU-backend nondeterminism alone. That's why the table above compares the same machine, and why small cross-machine differences in `reports/vix_lag_comparison.md` should not be over-read.
 
 ## Failure analysis
 
@@ -176,8 +197,8 @@ Vol-targeting check (`reports/*/tables/vol_target.csv`, transaction costs ignore
   * **QCOM, 11–15 Apr 2019:** forecast ≈19%, realized ≈175%. That was the Apple–Qualcomm settlement, a +23% day. Headlines beforehand were neutral, at most p_neg = 0.04.
   * **The pattern:** news *polarity* is the wrong signal for volatility. An earnings date or a pending legal ruling is a vol event whatever its tone. A scheduled-event flag (earnings calendar) or an event-type classifier is the natural next feature; tone alone is not.
 * **Why HAR + sentiment fails: overfitting, not the fallback.** On its own per-ticker fits (38,376 rows), HAR + sentiment's QLIKE is 0.670 vs 0.595 for HAR on the same rows. Six extra regressors per ticker overfit, and the worst year is 2020 (1.217 vs 0.934). The pooled-fallback forecasts (4,769 rows) are nearly as good as HAR (0.594 vs 0.578).
-* **Asymmetric bias.** Under-predictions make up about 42% of the deep models' QLIKE loss, against 55% for HAR. The deep models' mean log bias is close to zero (−0.01 to −0.03). GARCH and EWMA sit high (+0.18–0.20 on the full sample) because they forecast the *mean* variance, whose log exceeds the mean log-variance (Jensen). That is why they look poor on log-MSE but reasonable on QLIKE.
-* **2021 is where the deep models lose.** Both are worse than HAR in 2021 (LSTM 0.476, Transformer 0.490, HAR 0.449). Early-stopped on the 2020 crash year, they over-forecast the calmer 2021 market for months, visible as the late-2021 hump in the figure. The validation year was not representative of the test year.
+* **Asymmetric bias.** Under-predictions make up about 41–43% of the deep models' QLIKE loss, against 55% for HAR. The deep models' mean log bias is close to zero (−0.01 to −0.03). GARCH and EWMA sit high (+0.18–0.20 on the full sample) because they forecast the *mean* variance, whose log exceeds the mean log-variance (Jensen). That is why they look poor on log-MSE but reasonable on QLIKE.
+* **2021 is where the deep models lose.** Both are worse than HAR in 2021 (LSTM 0.471, Transformer 0.489, HAR 0.449). Early-stopped on the 2020 crash year, they over-forecast the calmer 2021 market for months, visible as the late-2021 hump in the figure. The validation year was not representative of the test year.
 
 ## Deployment
 
@@ -205,9 +226,9 @@ Vol-targeting check (`reports/*/tables/vol_target.csv`, transaction costs ignore
 * **FNSPID timestamps.** 99.8% of headlines have no time of day, so the conservative next-day rule can delay real news by one day. This biases the test *against* sentiment and is the strongest caveat on the null result.
 * **The sentiment results cover only part of the sample.** They hold on covered ticker-days (82%), which are not a random subset: coverage is better for some firms and years. They answer "does news help *when we have news*?".
 * **Headline polarity is a coarse signal.** The model scores tone sentence by sentence and never reads article bodies or event types. The failure analysis suggests event *type* matters more than tone.
-* **The VIX closes at 16:15 ET**, 15 minutes after stocks. Using the day-*t* VIX is a small look-ahead.
+* **VIX timing.** VIX features use day *t−1* because VIX closes after the stocks. Day *t*'s VIX would be usable by anyone forecasting after 16:15 ET, so this setup is slightly conservative. The original same-day setup was a look-ahead; see the audit above.
 * **The volatility proxy** is close-to-close returns (no intraday RV), which makes QLIKE noisy for single stock-weeks.
-* **CUDA vs MPS.** Deep-model numbers differ slightly between GPU backends, e.g. LSTM pooled QLIKE 0.4945 on CUDA vs 0.4946 on Apple MPS. All reported numbers come from the A40 run.
+* **GPU backend nondeterminism.** Deep-model results vary between CUDA (A40) and MPS (M4) by up to ~0.007 pooled QLIKE (measured with the no-VIX placebo above). All reported forecasting numbers come from the single M4 run, so comparisons within the tables are like for like.
 * **The vol-targeting check ignores transaction costs** and uses non-overlapping 5-day holds.
 * **The deep models are tuned only by early stopping.** There is no hyperparameter search, by design (spec settings), so the comparison is fair but not maximal.
 
@@ -228,7 +249,7 @@ Runs are tracked in MLflow (`mlflow ui --backend-store-uri sqlite:///mlflow.db`)
 
 ## Compute
 
-One RunPod A40, about 2 hours end to end:
+The first full run was on one RunPod A40, about 2 hours end to end:
 
 | Stage | Time |
 |---|---|
@@ -238,4 +259,4 @@ One RunPod A40, about 2 hours end to end:
 | V2 + V3 deep models (4 models × 7 folds × 3 seeds) | 42 min |
 | V6 ablations (6 configs × 7 folds × 3 seeds) | 64 min |
 
-The price-only experiments also run on a laptop (Apple M4: the LSTM ~25 s per fold, the Transformer ~1 min per fold).
+The lagged-VIX rerun of V1–V6 used the scored headlines from the A40 and ran on an Apple M4 (MPS) in about 2.5 hours of compute: LSTM configs ~8–12 min each, Transformer configs ~6–27 min each.

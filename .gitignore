@@ -16,3 +16,4 @@ __pycache__/
 /results.tar.gz
 /model.tar.gz
 /artifacts/predictions_vix_same_day/
+/mlflow_a40_vix_same_day.db
